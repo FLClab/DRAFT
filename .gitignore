@@ -2,3 +2,7 @@ validation/
 logs/
 DRaFT-LoRa-Claude/
 GRADIENT_CHECKPOINTING_GUIDE.md
+__pycache__/
+datasets/__pycache__/
+*.md
+test/
