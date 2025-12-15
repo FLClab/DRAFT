@@ -35,7 +35,7 @@ class DRaFT_DDPM(DDPM):
         lora_alpha: float = 1.0,  # LoRA scaling
         lora_dropout: float = 0.0,  # LoRA dropout
         lora_target_modules: Optional[List[str]] = None,  # Target modules for LoRA
-        use_gradient_checkpointing: bool = True,  # Use gradient checkpointing (critical for memory!)
+        use_gradient_checkpointing: bool = True,  # Use gradient checkpointing
         **kwargs
     ):
         """
@@ -55,7 +55,7 @@ class DRaFT_DDPM(DDPM):
             lora_alpha: LoRA scaling parameter
             lora_dropout: Dropout rate for LoRA layers
             lora_target_modules: Which modules to apply LoRA to (None = default)
-            use_gradient_checkpointing: Use gradient checkpointing to reduce memory (highly recommended!)
+            use_gradient_checkpointing: Use gradient checkpointing to reduce memory
         """
         super().__init__(
             denoising_model=denoising_model,
@@ -139,12 +139,12 @@ class DRaFT_DDPM(DDPM):
         Returns:
             Cosine similarity reward [B]
         """
-        # Keep encoder in eval mode (but allow gradients to flow!)
+        # Keep encoder in eval mode 
         # Encoder parameters are frozen (requires_grad=False), but we need
         # gradients w.r.t. the input to backprop through sampling
         self.reward_encoder.eval()
         
-        # Extract embeddings (with gradients!)
+        # Extract embeddings
         gen_embedding = self.reward_encoder(generated)
         
         # Target embedding can be computed without gradients (it's fixed)
@@ -541,10 +541,10 @@ class RewardEncoder(nn.Module):
             Embeddings [B, D]
         """
         # Keep in eval mode to disable dropout, batchnorm updates, etc.
-        # But DON'T use torch.no_grad() - we need gradients to flow!
+        # No torch.no_grad() because we need gradients to flow
         self.backbone.eval()
         
-        # Get features from backbone (with gradients!)
+        # Get features from backbone 
         # Parameters are frozen (requires_grad=False) but gradients flow through forward pass
         if hasattr(self.backbone, 'forward_features'):
             features = self.backbone.forward_features(x)
