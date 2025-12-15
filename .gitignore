@@ -6,3 +6,6 @@ __pycache__/
 datasets/__pycache__/
 *.md
 test/
+static/
+templates/
+data/

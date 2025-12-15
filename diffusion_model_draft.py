@@ -28,7 +28,7 @@ class DRaFT_DDPM(DDPM):
         use_low_variance: bool = False,  # Use DRaFT-LV variant
         reward_weight: float = 1.0,  # Weight for reward loss
         denoising_weight: float = 0.1,  # Weight for standard denoising loss (for stability)
-        num_sampling_steps: int = 50,  # Number of DDIM steps for sampling
+        num_sampling_steps: int = 100,  # Number of DDIM steps for sampling
         eta: float = 0.0,  # DDIM eta parameter (0 = deterministic)
         use_lora: bool = True,  # Use LoRA for parameter-efficient fine-tuning
         lora_rank: int = 4,  # LoRA rank
