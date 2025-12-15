@@ -14,28 +14,29 @@ from denoising_unet import UNet
 from diffusion_model_draft import DRaFT_DDPM, RewardEncoder
 from segmentation_unet import SegmentationUNet 
 from datasets.dendrites_dataset import DendriticFActinDataset 
+from datasets.axons_dataset import AxonalRingsDataset
 import time 
 
 
 parser = argparse.ArgumentParser()
 ### DM general arguments
-parser.add_argument("--dataset-path", type=str, default=os.path.join(BASE_PATH, "Datasets/DendriticFActinDataset"))
+parser.add_argument("--dataset-path", type=str, default=os.path.join(BASE_PATH, "Datasets/AxonalRingsDataset"))
 parser.add_argument("--num-epochs", type=int, default=100)
-parser.add_argument("--batch-size", type=int, default=16)
+parser.add_argument("--batch-size", type=int, default=1)
 parser.add_argument("--dry-run", action="store_true")
 ### DRaFT specific arguments
-parser.add_argument("--K", type=int, default=5)
+parser.add_argument("--K", type=int, default=1)
 parser.add_argument("--num-sampling-steps", type=int, default=100)
 parser.add_argument("--reward-weight", type=float, default=1.0) 
-parser.add_argument("--denoising-weight", type=float, default=0.1)
-parser.add_argument("--pretrained-checkpoint", type=str, default=os.path.join(BASE_PATH, "baselines/SR-baselines/DM_DendriticFActin/DM_AxonalRings_200.pth"))
+parser.add_argument("--denoising-weight", type=float, default=0.0)
+parser.add_argument("--pretrained-checkpoint", type=str, default=os.path.join(BASE_PATH, "baselines/SR-baselines/DM_AxonalRings/DM_axons_200.pth"))
 parser.add_argument("--use-low-variance", action="store_true")
 parser.add_argument("--use-lora", action="store_true", default=True)
 parser.add_argument("--no-lora", action="store_false", dest="use_lora")
 parser.add_argument("--lora-rank", type=int, default=4)
 parser.add_argument("--lora-alpha", type=float, default=1.0)
 parser.add_argument("--lora-dropout", type=float, default=0.0)
-parser.add_argument("--learning-rate", type=float, default=1e-5)
+parser.add_argument("--learning-rate", type=float, default=1e-4)
 parser.add_argument("--use-gradient-checkpointing", action="store_true", default=True, help="Use gradient checkpointing (highly recommended!)")
 parser.add_argument("--no-gradient-checkpointing", action="store_false", dest="use_gradient_checkpointing")
 args = parser.parse_args()
@@ -102,12 +103,14 @@ if __name__=="__main__":
 
     
     files = glob.glob(os.path.join(args.dataset_path, "train", "*.tif"))
-    dataset = DendriticFActinDataset(files=files)
+    # dataset = DendriticFActinDataset(files=files)
+    dataset = AxonalRingsDataset(files=files)
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     print(f"[---] Loaded train dataset ({len(dataset)} images) [---]")
 
     valid_files = glob.glob(os.path.join(args.dataset_path, "valid", "*.tif"))
-    valid_dataset = DendriticFActinDataset(files=valid_files)
+   #  valid_dataset = DendriticFActinDataset(files=valid_files)
+    valid_dataset = AxonalRingsDataset(files=valid_files)
     valid_dataloader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False) 
     print(f"[---] Loaded validation dataset ({len(valid_dataset)} images) [---]")
 
@@ -247,6 +250,7 @@ if __name__=="__main__":
     best_reward = -float('inf')
 
     losses, rewards = [], []
+    val_rewards = []
     start_time = time.time()
     for epoch in trange(args.num_epochs, desc="... Training DRaFT ..."):
         diffusion_model.train()
@@ -290,6 +294,17 @@ if __name__=="__main__":
         
         print("\n[---] Running validation [---]")
         val_reward = validation_step(diffusion_model, valid_dataset, DEVICE, epoch)
+        val_rewards.append(val_reward)
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.plot(rewards, label="Train")
+        ax.plot(val_rewards, label="Validation")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Reward")
+        ax.legend()
+        plt.tight_layout()
+        fig.savefig(f"./reward_curves_{args.reward_weight}_{args.denoising_weight}.png", dpi=300, bbox_inches="tight")
+        plt.close(fig)
 
         checkpoint = {   
             "model": diffusion_model.state_dict(),
@@ -301,18 +316,18 @@ if __name__=="__main__":
 
         if val_reward > best_reward:
             best_reward = val_reward 
-            save_path = os.path.join(BASE_PATH, "baselines/DRAFT/DRaFT_best.pth")
+            save_path = os.path.join(BASE_PATH, "baselines/DRAFT/AxonalRings_DRaFT_best.pth")
             torch.save(checkpoint, save_path)
             print(f"[---] Saved best model with reward: {val_reward:.4f} [---]")
 
             if args.use_lora:
-                lora_save_path = os.path.join(BASE_PATH, "baselines/DRAFT/DRaFT_best_lora.pth")
+                lora_save_path = os.path.join(BASE_PATH, "baselines/DRAFT/AxonalRings_DRaFT_best_lora.pth")
                 diffusion_model.save_lora_weights(lora_save_path)
                 print(f"[---] Saved LoRA weights to {lora_save_path} [---]")
 
-        torch.save(checkpoint, os.path.join(BASE_PATH, f"baselines/DRAFT/DRaFT_{epoch+1}.pth"))
+        torch.save(checkpoint, os.path.join(BASE_PATH, f"baselines/DRAFT/AxonalRings_DRaFT_{epoch+1}.pth"))
         if args.use_lora:
-            diffusion_model.save_lora_weights(os.path.join(BASE_PATH, f"baselines/DRAFT/DRaFT_{epoch+1}_lora.pth")) 
+            diffusion_model.save_lora_weights(os.path.join(BASE_PATH, f"baselines/DRAFT/AxonalRings_DRaFT_{epoch+1}_lora.pth")) 
 
     print(f"[---] Training completed [---]")
     print(f"[---] Best validation reward: {best_reward:.4f} [---]")

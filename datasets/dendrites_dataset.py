@@ -73,5 +73,5 @@ class DendriticFActinDataset(Dataset):
         rings = torch.tensor(rings[np.newaxis, ...], dtype=torch.float32)
         fibers = torch.tensor(fibers[np.newaxis, ...], dtype=torch.float32)
         ground_truth = torch.cat([rings, fibers], dim=0)
-        metadata = {"image_path": file}
+        metadata = {"image_path": file, "y": y, "x": x}
         return confocal, sted, ground_truth, metadata

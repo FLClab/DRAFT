@@ -4,5 +4,9 @@ DRaFT-LoRa-Claude/
 GRADIENT_CHECKPOINTING_GUIDE.md
 __pycache__/
 datasets/__pycache__/
-*.md
+LORA_SCALE_GUIDE.md
 test/
+static/
+templates/
+data/
+results/

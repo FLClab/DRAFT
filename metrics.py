@@ -22,9 +22,11 @@ def compute_aupr(truth: np.ndarray, prediction: np.ndarray) -> float:
     t, p = truth.ravel(), prediction.ravel() 
     if not np.any(t) and not np.any(p):
         return 1.0 
-    if not np.any(t) and np.any(p):
-        return 0.0 
-
+    if not np.any(t):
+        if np.any(p > 0.5):
+            return 0.0
+        else:
+            return -1.0
     else:
         precision, recall, _ = precision_recall_curve(t, p) 
         return auc(recall, precision)
