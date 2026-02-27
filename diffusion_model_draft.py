@@ -164,8 +164,8 @@ class DRaFT_DDPM(DDPM):
         self.reward_encoder.eval()
 
         # Normalize images to expected range for the encoder
-        gen_normalized = torch.clamp(generated, -1, 1)
-        target_normalized = torch.clamp(target, -1, 1)
+        gen_normalized = torch.clamp(generated, 0, 1)
+        target_normalized = torch.clamp(target, 0, 1)
 
         # Extract embeddings
         gen_embedding = self.reward_encoder(gen_normalized)
