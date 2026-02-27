@@ -39,24 +39,14 @@ parser.add_argument("--lora-dropout", type=float, default=0.0)
 parser.add_argument("--learning-rate", type=float, default=1e-4)
 parser.add_argument("--use-gradient-checkpointing", action="store_true", default=True, help="Use gradient checkpointing (highly recommended!)")
 parser.add_argument("--no-gradient-checkpointing", action="store_false", dest="use_gradient_checkpointing")
-parser.add_argument("--use-ema", action="store_true", default=False, help="Use Exponential Moving Average (recommended for stability)")
-parser.add_argument("--ema-decay", type=float, default=0.9999, help="EMA decay rate")
 args = parser.parse_args()
 
-def validation_step(model: nn.Module, valid_dataset: Dataset, device: torch.device, epoch: int, use_ema: bool = False):
+def validation_step(model: nn.Module, valid_dataset: Dataset, device: torch.device, epoch: int):
     """
     Validation step: generate samples and compute reward.
-
-    Args:
-        use_ema: If True and model has EMA, use EMA weights for validation
     """
     indices = np.random.choice(len(valid_dataset), size=5, replace=False)
     model.eval()
-
-    # Swap to EMA model if available and requested
-    if use_ema and hasattr(model, 'use_ema') and model.use_ema:
-        model.swap_to_ema()
-
     os.makedirs("./validation/DRAFT", exist_ok=True)
 
     rewards = []
@@ -99,11 +89,6 @@ def validation_step(model: nn.Module, valid_dataset: Dataset, device: torch.devi
 
     avg_reward = np.mean(rewards)
     print(f"\nValidation - Average Reward: {avg_reward:.4f}")
-
-    # Swap back from EMA if we used it
-    if use_ema and hasattr(model, 'use_ema') and model.use_ema:
-        model.swap_back_from_ema()
-
     model.train()
     return avg_reward
     
@@ -232,11 +217,6 @@ if __name__=="__main__":
     diffusion_model.to(DEVICE)
     diffusion_model.train()
 
-    # Enable EMA if requested
-    if args.use_ema:
-        diffusion_model.enable_ema(decay=args.ema_decay)
-        print(f"[---] EMA enabled with decay={args.ema_decay} [---]")
-
     if args.use_lora:
         from lora_layers import get_lora_parameters 
         lora_params = get_lora_parameters(diffusion_model.model)
@@ -263,7 +243,6 @@ if __name__=="__main__":
     print(f"\tBatch size: {args.batch_size}")
     print(f"\tUse gradient checkpointing: {args.use_gradient_checkpointing}")
     print(f"\tUse LoRA: {args.use_lora}")
-    print(f"\tUse EMA: {args.use_ema}")
     if args.use_lora:
         print(f"\tLoRA rank: {args.lora_rank}")
         print(f"\tLoRA alpha: {args.lora_alpha}")
@@ -320,10 +299,6 @@ if __name__=="__main__":
 
             optimizer.step()
 
-            # Update EMA if enabled
-            if args.use_ema:
-                diffusion_model.update_ema()
-            
             epoch_losses.append(loss.item())
             epoch_rewards.append(reward.item())
 
@@ -341,7 +316,7 @@ if __name__=="__main__":
         print(f"\tLearning Rate: {optimizer.param_groups[0]['lr']:.2e}")
         
         print("\n[---] Running validation [---]")
-        val_reward = validation_step(diffusion_model, valid_dataset, DEVICE, epoch, use_ema=args.use_ema)
+        val_reward = validation_step(diffusion_model, valid_dataset, DEVICE, epoch)
         val_rewards.append(val_reward)
         fig = plt.figure()
         ax = fig.add_subplot(111)

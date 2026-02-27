@@ -5,8 +5,6 @@ from typing import Optional, Dict, Tuple, Callable, List
 from diffusion_model import DDPM, _extract_into_tensor
 from torch import nn
 from lora_layers import inject_lora_into_model, get_lora_parameters, merge_lora_into_weights, save_lora_weights, load_lora_weights
-import copy
-
 
 class DRaFT_DDPM(DDPM):
     """
@@ -79,11 +77,6 @@ class DRaFT_DDPM(DDPM):
         self.eta = eta
         self.use_lora = use_lora
         self.use_gradient_checkpointing = use_gradient_checkpointing
-
-        # EMA model for stable evaluation (optional)
-        self.use_ema = False  # Can be enabled via method
-        self.ema_model = None
-        self.ema_decay = 0.9999
 
         # Inject LoRA into the denoising model
         if use_lora:
@@ -561,46 +554,6 @@ class DRaFT_DDPM(DDPM):
             self.model = merge_lora_into_weights(self.model)
             self.use_lora = False
             print("LoRA weights merged into base model")
-
-    def enable_ema(self, decay: float = 0.9999):
-        """
-        Enable Exponential Moving Average of model weights.
-
-        This is recommended in the DRaFT paper for more stable training
-        and better final performance.
-
-        Args:
-            decay: EMA decay rate (default: 0.9999)
-        """
-        self.use_ema = True
-        self.ema_decay = decay
-        self.ema_model = copy.deepcopy(self.model)
-        # Freeze EMA model
-        for param in self.ema_model.parameters():
-            param.requires_grad = False
-        print(f"EMA enabled with decay={decay}")
-
-    def update_ema(self):
-        """Update EMA model weights."""
-        if not self.use_ema or self.ema_model is None:
-            return
-
-        with torch.no_grad():
-            # Update EMA parameters
-            for ema_param, model_param in zip(self.ema_model.parameters(), self.model.parameters()):
-                ema_param.data.mul_(self.ema_decay).add_(model_param.data, alpha=1 - self.ema_decay)
-
-    def swap_to_ema(self):
-        """Swap to EMA model for evaluation."""
-        if not self.use_ema:
-            return
-        self.model, self.ema_model = self.ema_model, self.model
-
-    def swap_back_from_ema(self):
-        """Swap back to training model."""
-        if not self.use_ema:
-            return
-        self.model, self.ema_model = self.ema_model, self.model
 
 
 class RewardEncoder(nn.Module):
