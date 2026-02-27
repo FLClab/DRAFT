@@ -23,12 +23,25 @@ class AxonalRingsDataset(Dataset):
         data = tifffile.imread(file)
         # confocal, sted, rings = data[0] / 255.0, data[1] / 255.0, data[2] / 255.0
         confocal, sted, rings = data[0], data[1], data[2] 
+        m_conf, M_conf = np.min(confocal), np.max(confocal)
+        m_sted, M_sted = np.min(sted), np.max(sted)
+        confocal = (confocal - m_conf) / (M_conf - m_conf)
+        sted = (sted - m_sted) / (M_sted - m_sted) 
+        if rings.max() != 0:
+            rings = (rings / rings.max()).astype(np.uint8)
         confocal = torch.tensor(confocal[np.newaxis, ...], dtype=torch.float32)
         sted = torch.tensor(sted[np.newaxis, ...], dtype=torch.float32)
         rings = torch.tensor(rings[np.newaxis, ...], dtype=torch.float32)
-        cat = torch.cat([confocal, sted, rings], dim=0)
-        cat = self.transform(cat) if self.transform is not None else cat
-        confocal, sted, rings = cat[0:1], cat[1:2], cat[2:3]
         metadata = {"image_path": file}
         return confocal, sted, rings, metadata
         
+
+# if __name__=="__main__":
+#     files = glob.glob("/home-local/Frederic/Datasets/AxonalRingsDataset/train/*.tif")
+#     dataset = AxonalRingsDataset(files=files)
+#     print(len(dataset))
+#     for i in range(len(dataset)):
+#         confocal, sted, rings, metadata = dataset[i]
+#         print(confocal.shape, sted.shape, rings.shape)
+#         print(sted.max(), sted.min())
+#         print("\n")
