@@ -247,6 +247,7 @@ if __name__=="__main__":
     best_reward = -float('inf')
 
     losses, rewards = [], []
+    val_rewards = []
     start_time = time.time()
     for epoch in trange(args.num_epochs, desc="... Training DRaFT ..."):
         diffusion_model.train()
@@ -290,6 +291,17 @@ if __name__=="__main__":
         
         print("\n[---] Running validation [---]")
         val_reward = validation_step(diffusion_model, valid_dataset, DEVICE, epoch)
+        val_rewards.append(val_reward)
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.plot(rewards, label="Train")
+        ax.plot(val_rewards, label="Validation")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Reward")
+        ax.legend()
+        plt.tight_layout()
+        fig.savefig(f"./reward_curves_{args.reward_weight}_{args.denoising_weight}.png", dpi=300, bbox_inches="tight")
+        plt.close(fig)
 
         checkpoint = {   
             "model": diffusion_model.state_dict(),
@@ -301,18 +313,18 @@ if __name__=="__main__":
 
         if val_reward > best_reward:
             best_reward = val_reward 
-            save_path = os.path.join(BASE_PATH, "baselines/DRAFT/DRaFT_best.pth")
+            save_path = os.path.join(BASE_PATH, "baselines/DRAFT/DRaFT-only-reward_best.pth")
             torch.save(checkpoint, save_path)
             print(f"[---] Saved best model with reward: {val_reward:.4f} [---]")
 
             if args.use_lora:
-                lora_save_path = os.path.join(BASE_PATH, "baselines/DRAFT/DRaFT_best_lora.pth")
+                lora_save_path = os.path.join(BASE_PATH, "baselines/DRAFT/DRaFT-only-reward_best_lora.pth")
                 diffusion_model.save_lora_weights(lora_save_path)
                 print(f"[---] Saved LoRA weights to {lora_save_path} [---]")
 
-        torch.save(checkpoint, os.path.join(BASE_PATH, f"baselines/DRAFT/DRaFT_{epoch+1}.pth"))
+        torch.save(checkpoint, os.path.join(BASE_PATH, f"baselines/DRAFT/DRaFT-only-reward_{epoch+1}.pth"))
         if args.use_lora:
-            diffusion_model.save_lora_weights(os.path.join(BASE_PATH, f"baselines/DRAFT/DRaFT_{epoch+1}_lora.pth")) 
+            diffusion_model.save_lora_weights(os.path.join(BASE_PATH, f"baselines/DRAFT/DRaFT-only-reward_{epoch+1}_lora.pth")) 
 
     print(f"[---] Training completed [---]")
     print(f"[---] Best validation reward: {best_reward:.4f} [---]")
