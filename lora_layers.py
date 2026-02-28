@@ -297,10 +297,11 @@ def merge_lora_into_weights(model: nn.Module) -> nn.Module:
     """
     for name, module in model.named_modules():
         if isinstance(module, LinearWithLoRA):
-            # Merge: W_new = W + B @ A * scaling
+            # lora_A: (in_features, rank), lora_B: (rank, out_features)
+            # Linear.weight is (out_features, in_features), so delta = (A @ B).T = B.T @ A.T
             with torch.no_grad():
-                delta_w = (module.lora.lora_B @ module.lora.lora_A.T) * module.lora.scaling
-                module.linear.weight.data += delta_w.T
+                delta_w = (module.lora.lora_B.T @ module.lora.lora_A.T) * module.lora.scaling
+                module.linear.weight.data += delta_w
             
             # Replace with original linear (now containing merged weights)
             parent_name, child_name = name.rsplit('.', 1)
@@ -310,11 +311,10 @@ def merge_lora_into_weights(model: nn.Module) -> nn.Module:
             setattr(parent, child_name, module.linear)
             
         elif isinstance(module, Conv2dWithLoRA):
-            # Merge conv weights
+            # lora_A: (in_channels*k*k, rank), lora_B: (rank, out_channels)
+            # Conv weight is (out_channels, in_channels, k, k), so delta = (A @ B).T = B.T @ A.T
             with torch.no_grad():
-                # Reshape LoRA matrices to conv shape
-                in_features = module.conv.in_channels * module.conv.kernel_size[0] * module.conv.kernel_size[1]
-                delta_w_flat = (module.lora.lora_B @ module.lora.lora_A.T) * module.lora.scaling  # (out, in)
+                delta_w_flat = (module.lora.lora_B.T @ module.lora.lora_A.T) * module.lora.scaling  # (out_channels, in_channels*k*k)
                 delta_w = delta_w_flat.view(
                     module.conv.out_channels,
                     module.conv.in_channels,
