@@ -581,8 +581,9 @@ class DDPM(LightningModule):
             img = torch.randn(*shape, device=device)
         
         # time schedule with num_steps between 0 and T = 1000
-        times = np.linspace(self.T - 1, 0, num_steps, dtype=int)
-        times_next = np.append(times[1:], 0)
+        all_times = np.linspace(self.T - 1, 0, num_steps + 1, dtype=int)
+        times = all_times[:-1]
+        times_next = all_times[1:]
 
         if progress:
             from tqdm.auto import tqdm

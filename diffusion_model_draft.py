@@ -340,9 +340,11 @@ class DRaFT_DDPM(DDPM):
         else:
             img = torch.randn(*shape, device=device)
         
-        # Create time schedule
-        times = np.linspace(self.T - 1, 0, self.num_sampling_steps, dtype=int)
-        times_next = np.append(times[1:], 0)
+        # Create time schedule: num_sampling_steps+1 boundaries yield
+        # num_sampling_steps non-degenerate (t, t_prev) pairs ending at t_prev=0.
+        all_times = np.linspace(self.T - 1, 0, self.num_sampling_steps + 1, dtype=int)
+        times = all_times[:-1]
+        times_next = all_times[1:]
         
         # Determine where to start computing gradients
         if self.K is None:

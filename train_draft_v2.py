@@ -10,7 +10,10 @@ from diffusion_model import DDPM
 from diffusion_model_draft import DRaFT_DDPM, RewardEncoder
 from datasets.axons_dataset import AxonalRingsDataset
 from torch.utils.data import DataLoader
+from typing import List
+from tqdm import tqdm, trange
 import glob
+import matplotlib.pyplot as plt
 from utils import AverageMeter, SaveBestModel
 
 parser = argparse.ArgumentParser()
@@ -28,13 +31,132 @@ parser.add_argument("--denoising-weight", type=float, default=0.1)
 parser.add_argument("--use-low-variance", action="store_true", default=True)
 parser.add_argument("--use-lora", action="store_true", default=True)
 parser.add_argument("--no-lora", action="store_false", dest="use_lora")
-parser.add_argument("--lora-rank", type=int, default=4)
-parser.add_argument("--lora-alpha", type=float, default=1.0)
+parser.add_argument("--lora-rank", type=int, default=8)
+parser.add_argument("--lora-alpha", type=float, default=8)
 parser.add_argument("--lora-dropout", type=float, default=0.0)
 parser.add_argument("--learning-rate", type=float, default=1e-4)
 parser.add_argument("--use-gradient-checkpointing", action="store_true", default=True, help="Use gradient checkpointing (highly recommended!)")
 parser.add_argument("--no-gradient-checkpointing", action="store_false", dest="use_gradient_checkpointing")
+parser.add_argument("--max-queries", type=int, default=10_000)
 args = parser.parse_args()
+
+
+def training_queries(
+    queries: List[int],
+    rewards: List[float],
+    log_dir: str,
+):
+    os.makedirs(os.path.join(log_dir, "training"), exist_ok=True)
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.plot(np.arange(queries), rewards, color='firebrick', label="Rewards")
+    ax.set_xlabel('Queries')
+    ax.set_ylabel('Rewards / MSE')
+    ax.legend()
+    plt.tight_layout()
+    fig.savefig(os.path.join(log_dir, "training", f"DRAFT-{args.K}_training_queries.png"))
+    plt.close()
+    
+
+
+def training_logs(
+    train_loss_history: List[float],
+    val_loss_history: List[float],
+    learning_rate_history: List[float],
+    log_dir: str,
+):
+    os.makedirs(os.path.join(log_dir, "training"), exist_ok=True)
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax_twin = ax.twinx()
+    ax.plot(np.arange(0, len(train_loss_history), 1), train_loss_history, color='tab:blue', label="Train")
+    ax.plot(np.arange(0, len(val_loss_history), 1), val_loss_history, color='tab:orange', label="Validation")
+    ax_twin.plot(np.arange(0, len(learning_rate_history), 1), learning_rate_history, color='tab:green', label='lr', ls='--')
+    ax.set_xlabel('Epochs')
+    ax.set_ylabel('Loss')
+    ax_twin.set_ylabel('Learning Rate')
+    ax.legend()
+    plt.tight_layout()
+    fig.savefig(os.path.join(log_dir, "training", f"DRAFT-{args.K}_training_logs.png"))
+    plt.close()
+
+
+def display_samples(
+    model: nn.Module,
+    confocals: torch.Tensor,
+    steds: torch.Tensor,
+    epoch: int,
+    log_dir: str,
+    device: torch.device,
+):
+    os.makedirs(f"{log_dir}/epoch_{epoch+1}", exist_ok=True)
+    for i in range(confocals.shape[0]):
+        conf = confocals[i].unsqueeze(0).to(device)
+        with torch.no_grad():
+            sample, reward = model.sample_with_reward(
+                shape=(1, 1, conf.shape[2], conf.shape[3]),
+                target_images=steds[i].unsqueeze(0).to(device),
+                cond=None,
+                segmentation=conf,
+            )
+            sample_np = sample.squeeze().cpu().numpy() 
+            confocal_np = conf.squeeze().cpu().numpy()
+            sted_np = steds[i].squeeze().cpu().numpy()
+            fig, axs = plt.subplots(1, 3)
+            axs[0].imshow(confocal_np, cmap="hot", vmin=0, vmax=1)
+            axs[0].set_title("Input (Confocal)")
+            axs[0].axis("off")
+            axs[1].imshow(sample_np, cmap="hot", vmin=0, vmax=1)
+            axs[1].set_title(f"DRaFT\nReward: {reward.item():.4f}")
+            axs[1].axis("off")
+            axs[2].imshow(sted_np, cmap="hot", vmin=0, vmax=1)
+            axs[2].set_title("Target (STED)")
+            axs[2].axis("off")
+            plt.tight_layout()
+            fig.savefig(f"{log_dir}/epoch_{epoch+1}/sample_{i}.png", dpi=1200, bbox_inches="tight")
+            plt.close(fig)
+            if i == 10:
+                break 
+    
+
+
+
+def validation(
+    model: nn.Module,
+    dataloader: DataLoader, 
+    device: torch.device,
+    epoch: int,
+    log_dir: str, 
+    display: bool = True
+):
+    model.eval() 
+    loss_meter = AverageMeter()
+    reward_meter = AverageMeter()
+    mse_meter = AverageMeter()
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="... Validation batches ..."):
+            confocal, sted, _, metadata = batch 
+            confocal = confocal.to(device)
+            sted = sted.to(device)
+
+            results = model.draft_training_step(
+                target_images=sted, 
+                cond=None, 
+                segmentation=confocal,
+            )
+
+            loss = results["total_loss"]
+            mse_loss = results["denoising_loss"]
+            reward = results["reward"]
+
+            loss_meter.update(loss.item())
+            mse_meter.update(mse_loss.item())
+            reward_meter.update(reward.item())
+
+    if display:
+        display_samples(model, confocal, sted, epoch, log_dir, device)
+
+    return loss_meter.avg, mse_meter.avg, reward_meter.avg
 
 
 def train(
@@ -48,7 +170,106 @@ def train(
     log_dir: str,
     save_dir: str,
 ):
-    pass
+    model_name = "DRAFT_AxonalRings"
+    save_best_model = SaveBestModel(save_dir=save_dir, model_name=model_name, maximize=False)
+    loss_history, val_loss_history = [], []
+    mse_loss_history, val_mse_loss_history = [], []
+    reward_history, val_reward_history = [], []
+    num_queries = 0
+    learning_rate_history = []
+    for epoch in trange(num_epochs, desc="... Training epochs ..."):
+        model.train() 
+        train_loss = AverageMeter()
+        for batch in tqdm(train_dataloader, desc="... Training batches ..."):
+            confocal, sted, _, metadata = batch
+            confocal = confocal.to(device)
+            sted = sted.to(device)
+            optimizer.zero_grad()
+
+            results = model.draft_training_step(
+                target_images=sted,
+                cond=None,
+                segmentation=confocal,
+            )
+            loss = results["total_loss"]
+            mse_loss = results["denoising_loss"]
+            reward = results["reward"]
+
+            loss.backward()
+
+            has_nan = False
+            if args.use_lora:
+                from lora_layers import get_lora_parameters
+                params_to_check = get_lora_parameters(model.model)
+            else:
+                params_to_check = model.model.parameters()
+
+            for p in params_to_check:
+                if p.grad is not None and torch.isnan(p.grad).any():
+                    has_nan = True
+                    break
+
+            if has_nan:
+                print(f"Warning: NaN gradients detected at epoch {epoch+1}. Skipping update.")
+                optimizer.zero_grad()
+                continue
+
+            # Clip gradients to prevent explosion
+            if args.use_lora:
+                nn.utils.clip_grad_norm_(get_lora_parameters(model.model), max_norm=1.0)
+            else:
+                nn.utils.clip_grad_norm_(model.model.parameters(), max_norm=1.0)
+
+
+            optimizer.step()
+            train_loss.update(loss.item())
+            mse_loss_history.append(mse_loss.item())
+            reward_history.append(reward.item()) 
+            num_queries += 1 
+            if num_queries >= args.max_queries:
+                break
+        current_learning_rate = optimizer.param_groups[0]["lr"]
+        learning_rate_history.append(current_learning_rate)
+        scheduler.step()
+        loss_history.append(train_loss.avg)
+        
+        val_loss, val_mse_loss, val_reward = validation(model, valid_dataloader, device, epoch, log_dir=log_dir, display=True)#display=(epoch % 10 == 0))
+        val_loss_history.append(val_loss)
+        val_mse_loss_history.append(val_mse_loss)
+        val_reward_history.append(val_reward)
+
+        training_logs(
+            train_loss_history=loss_history,
+            val_loss_history=val_loss_history,
+            learning_rate_history=learning_rate_history,
+            log_dir=log_dir,
+        )
+        training_queries(
+            queries=num_queries,
+            rewards=reward_history,
+            log_dir=log_dir,
+        )
+
+        if (epoch + 1)% 10 == 0:
+            torch.save({
+                'epoch': epoch + 1,
+                'state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': val_loss,
+            }, os.path.join(save_dir, f"DRAFT_AxonalRings_epoch_{epoch+1}.pth"))
+
+        if not args.dry_run:
+            save_best_model(
+                current_val=val_loss,
+                epoch=epoch,
+                model=model, 
+                optimizer=optimizer,
+                criterion=val_loss,
+            )
+
+
+
+
 
 def main():
     LOG_FOLDER = "./axonalrings-experiment/DRAFT"
@@ -56,10 +277,12 @@ def main():
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     files = glob.glob(os.path.join(args.dataset_path, "train", "*.tif"))
+    # files = files[:10]
     train_dataset = AxonalRingsDataset(files=files)
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False)
 
     valid_files = glob.glob(os.path.join(args.dataset_path, "valid", "*.tif"))
+    # valid_files = valid_files[:10]
     valid_dataset = AxonalRingsDataset(files=valid_files)
     valid_dataloader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False) 
 
@@ -168,7 +391,7 @@ def main():
     if args.use_lora:
         from lora_layers import get_lora_parameters 
         lora_params = get_lora_parameters(diffusion_model.model)
-        optimizer = torch.optim.Adam(lora_params, lr=args.learning_rate, betas=(0.9, 0.99))
+        optimizer = torch.optim.AdamW(lora_params, lr=args.learning_rate, betas=(0.9, 0.99), weight_decay=0.1)
         trainable_params = sum(p.numel() for p in lora_params) 
         total_params = sum(p.numel() for p in diffusion_model.model.parameters())
         print(f"[---] Parameter efficiency: [---]")
@@ -176,7 +399,7 @@ def main():
         print(f"\tTrainable (LoRA): {trainable_params:,}")
         print(f"\tReduction: {100 * (1 - trainable_params / total_params):.1f}%\n")
     else:
-        optimizer = torch.optim.Adam(diffusion_model.model.parameters(), lr=args.learning_rate, betas=(0.9, 0.99))
+        optimizer = torch.optim.AdamW(diffusion_model.model.parameters(), lr=args.learning_rate, betas=(0.9, 0.99), weight_decay=0.1)
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-7)
 
