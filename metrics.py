@@ -35,12 +35,17 @@ def compute_metrics(
     truth_image: np.ndarray,
     prediction_image: np.ndarray,
     truth_segmentation: np.ndarray,
-    prediction_segmentation: np.ndarray
+    prediction_segmentation: np.ndarray,
+    pixel_only: bool = False
 ) -> dict:
     metrics = {}
     metrics["mse"] = compute_mse(truth_image, prediction_image)
     metrics["psnr"] = compute_psnr(truth_image, prediction_image)
     metrics["ssim"] = compute_ssim(truth_image, prediction_image)
-    metrics["rings_aupr"] = compute_aupr(truth_segmentation[0], prediction_segmentation[0])
-    metrics["fibers_aupr"] = compute_aupr(truth_segmentation[1], prediction_segmentation[1])
-    return metrics
+    if pixel_only:
+        return metrics 
+    else:
+        metrics["rings_aupr"] = compute_aupr(truth_segmentation[0], prediction_segmentation[0])
+        metrics["fibers_aupr"] = compute_aupr(truth_segmentation[1], prediction_segmentation[1])
+        return metrics
+

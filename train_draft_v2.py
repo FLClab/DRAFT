@@ -37,6 +37,7 @@ parser.add_argument("--lora-dropout", type=float, default=0.0)
 parser.add_argument("--learning-rate", type=float, default=1e-4)
 parser.add_argument("--use-gradient-checkpointing", action="store_true", default=True, help="Use gradient checkpointing (highly recommended!)")
 parser.add_argument("--no-gradient-checkpointing", action="store_false", dest="use_gradient_checkpointing")
+parser.add_argument("--n-lv-inner-loops", type=int, default=2, help="Number of DRaFT-LV inner loops (paper uses n=2)")
 parser.add_argument("--max-queries", type=int, default=10_000)
 args = parser.parse_args()
 
@@ -171,6 +172,8 @@ def train(
     save_dir: str,
 ):
     model_name = "DRAFT_AxonalRings"
+    if args.use_low_variance and args.K == 1:
+        model_name += "_LV"
     save_best_model = SaveBestModel(save_dir=save_dir, model_name=model_name, maximize=False)
     loss_history, val_loss_history = [], []
     mse_loss_history, val_mse_loss_history = [], []
@@ -323,6 +326,7 @@ def main():
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
         use_gradient_checkpointing=args.use_gradient_checkpointing,  # Critical for memory!
+        n_lv_inner_loops=args.n_lv_inner_loops,
         condition_type=None,
         latent_encoder=reward_backbone,
         concat_segmentation=True,
@@ -417,6 +421,8 @@ def main():
     if args.use_lora:
         print(f"\tLoRA rank: {args.lora_rank}")
         print(f"\tLoRA alpha: {args.lora_alpha}")
+    if args.use_low_variance and args.K == 1:
+        print(f"\tDRaFT-LV inner loops: {args.n_lv_inner_loops}")
     print("="*60 + "\n")
 
     train(
