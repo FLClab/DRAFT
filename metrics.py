@@ -3,6 +3,7 @@ import torch
 from skimage.metrics import peak_signal_noise_ratio
 from sklearn.metrics import precision_recall_curve, auc
 from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure
+from typing import Optional
 
 def compute_mse(truth: np.ndarray, prediction: np.ndarray) -> float:
     return np.mean((truth - prediction) ** 2) 
@@ -34,8 +35,8 @@ def compute_aupr(truth: np.ndarray, prediction: np.ndarray) -> float:
 def compute_metrics(
     truth_image: np.ndarray,
     prediction_image: np.ndarray,
-    truth_segmentation: np.ndarray,
-    prediction_segmentation: np.ndarray,
+    truth_segmentation: Optional[np.ndarray] = None,
+    prediction_segmentation: Optional[np.ndarray] = None,
     pixel_only: bool = False
 ) -> dict:
     metrics = {}

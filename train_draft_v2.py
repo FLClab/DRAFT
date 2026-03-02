@@ -28,7 +28,7 @@ parser.add_argument("--K", type=int, default=1)
 parser.add_argument("--num-sampling-steps", type=int, default=100)
 parser.add_argument("--reward-weight", type=float, default=1.0) 
 parser.add_argument("--denoising-weight", type=float, default=0.1)
-parser.add_argument("--use-low-variance", action="store_true", default=True)
+parser.add_argument("--use-low-variance", action="store_true", default=False)
 parser.add_argument("--use-lora", action="store_true", default=True)
 parser.add_argument("--no-lora", action="store_false", dest="use_lora")
 parser.add_argument("--lora-rank", type=int, default=8)
@@ -171,7 +171,7 @@ def train(
     log_dir: str,
     save_dir: str,
 ):
-    model_name = "DRAFT_AxonalRings"
+    model_name = f"DRAFT-{args.K}-rank{args.lora_rank}_AxonalRings"
     if args.use_low_variance and args.K == 1:
         model_name += "_LV"
     save_best_model = SaveBestModel(save_dir=save_dir, model_name=model_name, maximize=False)
@@ -259,7 +259,7 @@ def train(
                 'state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': val_loss,
-            }, os.path.join(save_dir, f"DRAFT_AxonalRings_epoch_{epoch+1}.pth"))
+            }, os.path.join(save_dir, f"DRAFT-{args.K}-rank{args.lora_rank}_AxonalRings_epoch_{epoch+1}.pth"))
 
         if not args.dry_run:
             save_best_model(
@@ -275,7 +275,7 @@ def train(
 
 
 def main():
-    LOG_FOLDER = "./axonalrings-experiment/DRAFT"
+    LOG_FOLDER = f"./axonalrings-experiment/DRAFT-{args.K}-rank{args.lora_rank}"
     os.makedirs(LOG_FOLDER, exist_ok=True)
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
