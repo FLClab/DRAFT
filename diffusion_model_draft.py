@@ -35,6 +35,7 @@ class DRaFT_DDPM(DDPM):
         lora_dropout: float = 0.0,  # LoRA dropout
         lora_target_modules: Optional[List[str]] = None,  # Target modules for LoRA
         use_gradient_checkpointing: bool = True,  # Use gradient checkpointing
+        n_lv_inner_loops: int = 2,  # Number of DRaFT-LV inner loops (re-noise & re-denoise)
         **kwargs
     ):
         """
@@ -55,6 +56,7 @@ class DRaFT_DDPM(DDPM):
             lora_dropout: Dropout rate for LoRA layers
             lora_target_modules: Which modules to apply LoRA to (None = default)
             use_gradient_checkpointing: Use gradient checkpointing to reduce memory
+            n_lv_inner_loops: Number of DRaFT-LV inner loops (paper uses n=2)
         """
         super().__init__(
             denoising_model=denoising_model,
@@ -77,6 +79,7 @@ class DRaFT_DDPM(DDPM):
         self.eta = eta
         self.use_lora = use_lora
         self.use_gradient_checkpointing = use_gradient_checkpointing
+        self.n_lv_inner_loops = n_lv_inner_loops
 
         # Inject LoRA into the denoising model
         if use_lora:
@@ -340,9 +343,11 @@ class DRaFT_DDPM(DDPM):
         else:
             img = torch.randn(*shape, device=device)
         
-        # Create time schedule
-        times = np.linspace(self.T - 1, 0, self.num_sampling_steps, dtype=int)
-        times_next = np.append(times[1:], 0)
+        # Create time schedule: num_sampling_steps+1 boundaries yield
+        # num_sampling_steps non-degenerate (t, t_prev) pairs ending at t_prev=0.
+        all_times = np.linspace(self.T - 1, 0, self.num_sampling_steps + 1, dtype=int)
+        times = all_times[:-1]
+        times_next = all_times[1:]
         
         # Determine where to start computing gradients
         if self.K is None:
@@ -397,9 +402,40 @@ class DRaFT_DDPM(DDPM):
                         use_low_variance=False
                     )
         
-        # Compute reward
-        # reward = self.compute_cosine_similarity_reward(img, target_images)
+        # Compute reward from the sampling chain (first gradient term)
         reward = self.compute_perceptual_loss_reward(img, target_images)
+
+        # DRaFT-LV inner loops (Algorithm 1 from Clark et al.):
+        # Re-noise x_0 to t=1 with different noise samples, re-denoise,
+        # and accumulate reward gradients to reduce variance.
+        if self.use_low_variance and self.K == 1 and self.n_lv_inner_loops > 0:
+            lv_rewards = [reward]
+            x_0_detached = img.detach()
+
+            for _ in range(self.n_lv_inner_loops):
+                eps_noise = torch.randn_like(x_0_detached)
+                t_one = torch.ones(shape[0], device=device, dtype=torch.long)
+
+                # Forward diffusion: x_1 = α_1 * x_0 + σ_1 * ε
+                x_1 = self.q_sample(x_0_detached, t_one, noise=eps_noise)
+
+                if segmentation is not None:
+                    x_1_in = torch.cat((x_1, segmentation), dim=1)
+                else:
+                    x_1_in = x_1
+
+                # Re-denoise (differentiable through model params)
+                out = self.p_mean_variance(
+                    x_1_in, t_one, clip_denoised=clip_denoised,
+                    denoised_fn=None, model_kwargs=model_kwargs, cond=cond
+                )
+                x_hat_0 = out["pred_x0"]
+
+                lv_reward = self.compute_perceptual_loss_reward(x_hat_0, target_images)
+                lv_rewards.append(lv_reward)
+
+            reward = torch.stack(lv_rewards).mean(dim=0)
+
         return img, reward
     
     def draft_training_step(
