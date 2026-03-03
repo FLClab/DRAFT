@@ -1,10 +1,10 @@
 #!/bin/bash 
 
-#SBATCH --time=24:00:00 
+#SBATCH --time=48:00:00 
 #SBATCH --account=def-flavielc
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16Gb
-#SBATCH --gres=gpu:h100:1
+#SBATCH --gpus=h100:1
 #SBATCH --output=logs/%x-%A_%a.out
 #SBATCH --mail-user=frbea320@ulaval.ca
 #SBATCH --mail-type=ALL
@@ -26,7 +26,7 @@ echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% Beginning..."
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 
-python train_draft.py
+python train_draft.py --K 1 --use-low-variance
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% DONE %"
