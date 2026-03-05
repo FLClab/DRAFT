@@ -159,7 +159,6 @@ def inference(
             ddim_metrics = compute_metrics(
                 truth_image=sted_np,
                 prediction_image=ddim_sample_np,
-                pixel_only=True,
             )
             
             for key in ddim_metrics.keys():
@@ -175,7 +174,6 @@ def inference(
             draft_metrics = compute_metrics(
                 truth_image=sted_np,
                 prediction_image=draft_sample_np,
-                pixel_only=True,
             )
             for key in draft_metrics.keys():
                 metrics[key]["DRaFT"].append(draft_metrics[key])

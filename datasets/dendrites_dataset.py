@@ -53,6 +53,7 @@ class DendriticFActinDataset(Dataset):
         else:    
             confocal, sted = data[0, :, :], data[1, :, :]
             rings, fibers = data[2, :, :], data[3, :, :]
+            y, x = 0, 0
         
         if rings.max() > 1:
             rings = (rings / rings.max())

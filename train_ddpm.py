@@ -27,7 +27,7 @@ parser.add_argument("--num-epochs", type=int, default=100)
 parser.add_argument("--batch-size", type=int, default=2)
 parser.add_argument("--dry-run", action="store_true")
 parser.add_argument("--save-folder", type=str, default=os.path.join(BASE_PATH, "baselines", "DRAFT", "AxonalRings"))
-parser.add_argument("--subsample", action="store_true")
+parser.add_argument("--subsample", type=int, default=None)
 args = parser.parse_args()
 
 
@@ -183,6 +183,7 @@ def train(
 def main():
     os.makedirs(args.save_folder, exist_ok=True)
     LOG_FOLDER = f"./{args.dataset}-experiment/{args.subsample if args.subsample else 'full'}-sample"
+    os.makedirs(LOG_FOLDER, exist_ok=True)
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     files = glob.glob(os.path.join(args.dataset_path, args.dataset, "train", "*.tif"))
