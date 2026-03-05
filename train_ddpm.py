@@ -9,21 +9,25 @@ from stedfm.DEFAULTS import BASE_PATH
 from stedfm import get_pretrained_model_v2 
 from torch.utils.data import DataLoader 
 import os 
+import random
 from typing import List
 from tqdm import tqdm, trange 
 import torchvision.transforms as T
 import glob 
 from denoising_unet import UNet
 from diffusion_model import DDPM 
+from datasets.dendrites_dataset import DendriticFActinDataset 
 from datasets.axons_dataset import AxonalRingsDataset 
 from utils import AverageMeter, SaveBestModel
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--dataset-path", type=str, default=os.path.join(BASE_PATH, "Datasets", "AxonalRingsDataset"))
+parser.add_argument("--dataset", type=str, default="AxonalRings")
+parser.add_argument("--dataset-path", type=str, default=os.path.join(BASE_PATH, "Datasets"))
 parser.add_argument("--num-epochs", type=int, default=100)
 parser.add_argument("--batch-size", type=int, default=2)
 parser.add_argument("--dry-run", action="store_true")
 parser.add_argument("--save-folder", type=str, default=os.path.join(BASE_PATH, "baselines", "DRAFT", "AxonalRings"))
+parser.add_argument("--subsample", type=int, default=None)
 args = parser.parse_args()
 
 
@@ -125,7 +129,7 @@ def train(
     model_kwargs = {}
     optimizer = torch.optim.Adam(model.parameters(), lr=2e-4, betas=(0.9, 0.99))
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
-    model_name = "DDPM_AxonalRings"
+    model_name = f"DDPM_{args.dataset}-{args.subsample if args.subsample else 'full'}-sample"
 
     save_best_model = SaveBestModel(save_dir=save_dir, model_name=model_name, maximize=False) 
     loss_history, val_loss_history = [], [] 
@@ -164,7 +168,7 @@ def train(
                     'state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                     'loss': val_loss,
-                }, os.path.join(save_dir, f"DDPM_AxonalRings_epoch_{epoch+1}.pth"))
+                }, os.path.join(save_dir, f"DDPM_{args.dataset}-{args.subsample if args.subsample else 'full'}-sample_epoch_{epoch+1}.pth"))
 
         if not args.dry_run:
             save_best_model(current_val=val_loss, epoch=epoch, model=model, optimizer=optimizer, criterion=val_loss)
@@ -178,20 +182,26 @@ def train(
 
 def main():
     os.makedirs(args.save_folder, exist_ok=True)
-    LOG_FOLDER = "./axonalrings-experiment"
+    LOG_FOLDER = f"./{args.dataset}-experiment/{args.subsample if args.subsample else 'full'}-sample"
+    os.makedirs(LOG_FOLDER, exist_ok=True)
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    files = glob.glob(os.path.join(args.dataset_path, "train", "*.tif"))
+    files = glob.glob(os.path.join(args.dataset_path, args.dataset, "train", "*.tif"))
+
+    if args.subsample is not None:
+        files = random.sample(files, args.subsample)
     transform = T.Compose([
         T.RandomHorizontalFlip(),
         T.RandomVerticalFlip(),
     ])
-    train_dataset = AxonalRingsDataset(files=files, transform=transform)
+
+    DatasetClass = DendriticFActinDataset if args.dataset == "DendriticFActinDataset" else AxonalRingsDataset
+    train_dataset = DatasetClass(files=files, transform=transform)
     print(f"[---] Training set size: {len(train_dataset)} [---]")
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False) 
 
-    valid_files = glob.glob(os.path.join(args.dataset_path, "valid", "*.tif")) 
-    valid_dataset = AxonalRingsDataset(files=valid_files, transform=None)
+    valid_files = glob.glob(os.path.join(args.dataset_path, args.dataset, "valid", "*.tif")) 
+    valid_dataset = DatasetClass(files=valid_files, transform=None)
     print(f"[---] Validation set size: {len(valid_dataset)} [---]")
     valid_loader = DataLoader(valid_dataset, batch_size=args.batch_size*8, shuffle=False, drop_last=False) 
 
