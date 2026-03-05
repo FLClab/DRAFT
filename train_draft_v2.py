@@ -19,7 +19,7 @@ from utils import AverageMeter, SaveBestModel
 parser = argparse.ArgumentParser()
 parser.add_argument("--dataset-path", type=str, default=os.path.join(BASE_PATH, "Datasets", "AxonalRingsDataset"))
 parser.add_argument("--num-epochs", type=int, default=100)
-parser.add_argument("--batch-size", type=int, default=1)
+parser.add_argument("--batch-size", type=int, default=4)
 parser.add_argument("--dry-run", action="store_true")
 parser.add_argument("--save-folder", type=str, default=os.path.join(BASE_PATH, "baselines", "DRAFT", "AxonalRings"))
 parser.add_argument("--ddim-ckpt", type=str, default=os.path.join(BASE_PATH, "baselines", "DRAFT", "AxonalRings", "DDPM_AxonalRings.pth"))

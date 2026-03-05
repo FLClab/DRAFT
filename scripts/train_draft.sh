@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-#SBATCH --time=48:00:00 
+#SBATCH --time=23:00:00 
 #SBATCH --account=def-flavielc
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16Gb
@@ -26,7 +26,7 @@ echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% Beginning..."
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 
-python train_draft.py --K 1 --use-low-variance
+python train_draft_v2.py --K 1 --use-low-variance 
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% DONE %"
