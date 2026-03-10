@@ -22,7 +22,7 @@ from metrics import compute_metrics
 parser = argparse.ArgumentParser() 
 parser.add_argument("--dataset", type=str, default="DendriticFActin")
 parser.add_argument("--dataset-path", type=str, default=os.path.join(BASE_PATH, "Datasets"))
-parser.add_argument("--subsamples", nargs="+", type=int, default=[50, 100, 250, 500, 1000, 2000, 3000])
+parser.add_argument("--subsamples", nargs="+", type=int, default=[50, 100, 300, 500, 1000, 2000, 3000])
 parser.add_argument("--eval-only", action="store_true", default=False)
 parser.add_argument("--model", type=str, default="DDPM")
 parser.add_argument("--ckpt-path", type=str, default=os.path.join(BASE_PATH, "baselines", "DRAFT"))
@@ -115,14 +115,19 @@ def inference(
             )
             sample_np = np.clip(sample.squeeze().cpu().numpy(), 0, 1)
             sample_metrics = compute_metrics(truth_image=sted_np, prediction_image=sample_np)
+            mse, psnr, ssim = sample_metrics["mse"], sample_metrics["psnr"], sample_metrics["ssim"]
             for key in sample_metrics.keys():
                 results[key].append(sample_metrics[key]) 
             fig, axs = plt.subplots(1, 3, figsize=(15, 5))
             axs[0].imshow(confocal_np, cmap="hot", vmin=0, vmax=1)
             axs[1].imshow(sted_np, cmap="hot", vmin=0, vmax=1)
             axs[2].imshow(sample_np, cmap="hot", vmin=0, vmax=1)
-            for t, ax in zip(("Confocal", "STED", "Sample"), axs):
-                ax.set_title(t)
+            
+            axs[0].set_title("Confocal")
+            axs[1].set_title("STED")
+            axs[2].set_title(f"MSE: {mse:.4f}\nPSNR: {psnr:.4f}\nSSIM: {ssim:.4f}")         
+            for ax in axs:
+                
                 ax.axis("off")
             plt.tight_layout()
             savename = os.path.basename(metadata["image_path"][0].replace(".tif", ""))
@@ -169,8 +174,7 @@ def analyze_results(ddpm_results: dict, save_dir: str):
 def main():
     LOG_FOLDER = os.path.join(f"./{args.dataset}-experiment/results") 
     os.makedirs(LOG_FOLDER, exist_ok=True)
-    # DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    DEVICE = torch.device("cpu")
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if args.eval_only:
         ddpm_results = {}
@@ -188,7 +192,6 @@ def main():
         test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=False)
         for subsample in args.subsamples:
             model = load_ddpm(model_type=args.model, subsample=subsample).to(DEVICE)
-            continue
             results = inference(model=model, dataloader=test_dataloader, device=DEVICE, save_dir=LOG_FOLDER, model_type=args.model, subsample=subsample)
             np.savez(
                 os.path.join(LOG_FOLDER, f"{args.model}-{subsample}-sample.npz"),
