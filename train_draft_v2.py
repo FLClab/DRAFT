@@ -12,17 +12,22 @@ from datasets.axons_dataset import AxonalRingsDataset
 from torch.utils.data import DataLoader
 from typing import List
 from tqdm import tqdm, trange
+import torchvision.transforms as T
 import glob
+import random
+from datasets.dendrites_dataset import DendriticFActinDataset
 import matplotlib.pyplot as plt
 from utils import AverageMeter, SaveBestModel
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--dataset-path", type=str, default=os.path.join(BASE_PATH, "Datasets", "AxonalRingsDataset"))
+parser.add_argument("--seed", type=int, default=42)
+parser.add_argument("--dataset", type=str, default="DendriticFActinDataset")
+parser.add_argument("--dataset-path", type=str, default=os.path.join(BASE_PATH, "Datasets", "DendriticFActinDataset"))
 parser.add_argument("--num-epochs", type=int, default=100)
 parser.add_argument("--batch-size", type=int, default=4)
 parser.add_argument("--dry-run", action="store_true")
-parser.add_argument("--save-folder", type=str, default=os.path.join(BASE_PATH, "baselines", "DRAFT", "AxonalRings"))
-parser.add_argument("--ddim-ckpt", type=str, default=os.path.join(BASE_PATH, "baselines", "DRAFT", "AxonalRings", "DDPM_AxonalRings.pth"))
+parser.add_argument("--save-folder", type=str, default=os.path.join(BASE_PATH, "baselines", "DRAFT", "DendriticFActin"))
+parser.add_argument("--ddim-ckpt", type=str, default=os.path.join(BASE_PATH, "baselines", "DRAFT", "DendriticFActin", "DDPM_AxonalRings.pth"))
 ### DRaFT specific arguments
 parser.add_argument("--K", type=int, default=1)
 parser.add_argument("--num-sampling-steps", type=int, default=100)
@@ -38,7 +43,7 @@ parser.add_argument("--learning-rate", type=float, default=1e-4)
 parser.add_argument("--use-gradient-checkpointing", action="store_true", default=True, help="Use gradient checkpointing (highly recommended!)")
 parser.add_argument("--no-gradient-checkpointing", action="store_false", dest="use_gradient_checkpointing")
 parser.add_argument("--n-lv-inner-loops", type=int, default=2, help="Number of DRaFT-LV inner loops (paper uses n=2)")
-parser.add_argument("--max-queries", type=int, default=10_000)
+parser.add_argument("--subsample", type=int, default=None)
 args = parser.parse_args()
 
 
@@ -55,7 +60,7 @@ def training_queries(
     ax.set_ylabel('Rewards / MSE')
     ax.legend()
     plt.tight_layout()
-    fig.savefig(os.path.join(log_dir, "training", f"DRAFT-{args.K}_training_queries.png"))
+    fig.savefig(os.path.join(log_dir, "training", f"DRAFT-{args.K}_training_queries_{args.subsample if args.subsample else 'full'}-sample.png"))
     plt.close()
     
 
@@ -78,7 +83,7 @@ def training_logs(
     ax_twin.set_ylabel('Learning Rate')
     ax.legend()
     plt.tight_layout()
-    fig.savefig(os.path.join(log_dir, "training", f"DRAFT-{args.K}_training_logs.png"))
+    fig.savefig(os.path.join(log_dir, "training", f"DRAFT-{args.K}_training_logs_{args.subsample if args.subsample else 'full'}-sample.png"))
     plt.close()
 
 
@@ -90,7 +95,7 @@ def display_samples(
     log_dir: str,
     device: torch.device,
 ):
-    os.makedirs(f"{log_dir}/epoch_{epoch+1}", exist_ok=True)
+    os.makedirs(f"{log_dir}/{args.subsample if args.subsample else 'full'}-sample/epoch_{epoch+1}", exist_ok=True)
     for i in range(confocals.shape[0]):
         conf = confocals[i].unsqueeze(0).to(device)
         with torch.no_grad():
@@ -114,7 +119,7 @@ def display_samples(
             axs[2].set_title("Target (STED)")
             axs[2].axis("off")
             plt.tight_layout()
-            fig.savefig(f"{log_dir}/epoch_{epoch+1}/sample_{i}.png", dpi=1200, bbox_inches="tight")
+            fig.savefig(f"{log_dir}/{args.subsample if args.subsample else 'full'}-sample/epoch_{epoch+1}/sample_{i}.png", dpi=1200, bbox_inches="tight")
             plt.close(fig)
             if i == 10:
                 break 
@@ -171,15 +176,15 @@ def train(
     log_dir: str,
     save_dir: str,
 ):
-    model_name = f"DRAFT-{args.K}-rank{args.lora_rank}_AxonalRings"
+    model_name = f"DRAFT-{args.dataset}-{args.subsample if args.subsample else 'full'}-sample-{args.K}-rank{args.lora_rank}"
     if args.use_low_variance and args.K == 1:
         model_name += "_LV"
     save_best_model = SaveBestModel(save_dir=save_dir, model_name=model_name, maximize=False)
     loss_history, val_loss_history = [], []
     mse_loss_history, val_mse_loss_history = [], []
     reward_history, val_reward_history = [], []
-    num_queries = 0
     learning_rate_history = []
+    num_queries = 0
     for epoch in trange(num_epochs, desc="... Training epochs ..."):
         model.train() 
         train_loss = AverageMeter()
@@ -222,21 +227,22 @@ def train(
                 nn.utils.clip_grad_norm_(get_lora_parameters(model.model), max_norm=1.0)
             else:
                 nn.utils.clip_grad_norm_(model.model.parameters(), max_norm=1.0)
+            
 
 
             optimizer.step()
             train_loss.update(loss.item())
             mse_loss_history.append(mse_loss.item())
             reward_history.append(reward.item()) 
-            num_queries += 1 
-            if num_queries >= args.max_queries:
-                break
+            num_queries += 1
+
+       
         current_learning_rate = optimizer.param_groups[0]["lr"]
         learning_rate_history.append(current_learning_rate)
         scheduler.step()
         loss_history.append(train_loss.avg)
         
-        val_loss, val_mse_loss, val_reward = validation(model, valid_dataloader, device, epoch, log_dir=log_dir, display=True)#display=(epoch % 10 == 0))
+        val_loss, val_mse_loss, val_reward = validation(model, valid_dataloader, device, epoch, log_dir=log_dir, display=(epoch % 10 == 0))
         val_loss_history.append(val_loss)
         val_mse_loss_history.append(val_mse_loss)
         val_reward_history.append(val_reward)
@@ -259,7 +265,7 @@ def train(
                 'state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': val_loss,
-            }, os.path.join(save_dir, f"DRAFT-{args.K}-rank{args.lora_rank}_AxonalRings_epoch_{epoch+1}.pth"))
+            }, os.path.join(save_dir, f"DRAFT-{args.dataset}-{args.subsample if args.subsample else 'full'}-sample-{args.K}-rank{args.lora_rank}_epoch_{epoch+1}.pth"))
 
         if not args.dry_run:
             save_best_model(
@@ -271,22 +277,36 @@ def train(
             )
 
 
-
+def set_seeds(seed: int):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
 
 
 def main():
-    LOG_FOLDER = f"./axonalrings-experiment/DRAFT-{args.K}-rank{args.lora_rank}"
+    set_seeds(args.seed)
+    LOG_FOLDER = f"./{args.dataset}-experiment/DRAFT-{args.K}-rank{args.lora_rank}-{args.subsample if args.subsample else 'full'}-sample"
     os.makedirs(LOG_FOLDER, exist_ok=True)
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    DatasetClass = DendriticFActinDataset if args.dataset == "DendriticFActinDataset" else AxonalRingsDataset
+    
     files = glob.glob(os.path.join(args.dataset_path, "train", "*.tif"))
-    # files = files[:10]
-    train_dataset = AxonalRingsDataset(files=files)
+    if args.subsample is not None:
+        files = random.sample(files, args.subsample)
+
+    transform = T.Compose([
+        T.RandomHorizontalFlip(),
+        T.RandomVerticalFlip(),
+    ])
+    train_dataset = DatasetClass(files=files, transform=transform)
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False)
 
     valid_files = glob.glob(os.path.join(args.dataset_path, "valid", "*.tif"))
-    # valid_files = valid_files[:10]
-    valid_dataset = AxonalRingsDataset(files=valid_files)
+    valid_files = random.sample(valid_files, 100)
+    valid_dataset = DatasetClass(files=valid_files, transform=None)
     valid_dataloader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False) 
 
     reward_backbone, cfg = get_pretrained_model_v2(

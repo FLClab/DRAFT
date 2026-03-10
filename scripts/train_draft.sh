@@ -8,6 +8,7 @@
 #SBATCH --output=logs/%x-%A_%a.out
 #SBATCH --mail-user=frbea320@ulaval.ca
 #SBATCH --mail-type=ALL
+#SBATCH --array=0-4
 
 export NCCL_DEBUG=INFO
 export NCCL_IB_DISABLE=0
@@ -21,12 +22,30 @@ source ~/phd/bin/activate
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
+SUBSAMPLES=(
+    250
+    500
+    1000
+    2000
+    3000
+)
+
+CHECKPOINTS=(
+    "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-250-sample.pth"
+    "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-500-sample.pth"
+    "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-1000-sample.pth"
+    "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-2000-sample.pth"
+    "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-3000-sample.pth"
+)
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% Beginning..."
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 
-python train_draft_v2.py --K 1 --use-low-variance 
+subsample=${SUBSAMPLES[$SLURM_ARRAY_TASK_ID]}
+checkpoint=${CHECKPOINTS[$SLURM_ARRAY_TASK_ID]}
+
+python train_draft_v2.py --K 1 --ddim-ckpt $checkpoint --subsample $subsample
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% DONE %"
