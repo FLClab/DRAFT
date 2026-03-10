@@ -1,5 +1,4 @@
 import numpy as np
-from sklearn.utils import metadata_routing
 import torch 
 import argparse 
 from stedfm.DEFAULTS import BASE_PATH 

@@ -21,6 +21,7 @@ from datasets.axons_dataset import AxonalRingsDataset
 from utils import AverageMeter, SaveBestModel
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--seed", type=int, default=43)
 parser.add_argument("--dataset", type=str, default="AxonalRings")
 parser.add_argument("--dataset-path", type=str, default=os.path.join(BASE_PATH, "Datasets"))
 parser.add_argument("--num-epochs", type=int, default=100)
@@ -50,7 +51,7 @@ def training_logs(
     ax_twin.set_ylabel('Learning Rate')
     ax.legend()
     plt.tight_layout()
-    fig.savefig(os.path.join(log_dir, "DDPM_training_logs.png"))
+    fig.savefig(os.path.join(log_dir, f"DDPM_training_logs-{args.seed}.png"))
     plt.close()
 
 def display_samples(
@@ -129,7 +130,7 @@ def train(
     model_kwargs = {}
     optimizer = torch.optim.Adam(model.parameters(), lr=2e-4, betas=(0.9, 0.99))
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
-    model_name = f"DDPM_{args.dataset}-{args.subsample if args.subsample else 'full'}-sample"
+    model_name = f"DDPM_{args.dataset}-{args.subsample if args.subsample else 'full'}-sample-{args.seed}"
 
     save_best_model = SaveBestModel(save_dir=save_dir, model_name=model_name, maximize=False) 
     loss_history, val_loss_history = [], [] 
@@ -159,7 +160,7 @@ def train(
         scheduler.step()
         loss_history.append(train_loss.avg)
         
-        val_loss = validation(model, valid_dataloader, device, epoch, log_dir=log_dir, display=(epoch % 10 == 0))
+        val_loss = validation(model, valid_dataloader, device, epoch, log_dir=log_dir)
         val_loss_history.append(val_loss)
 
         if (epoch + 1) % 10 == 0:
@@ -168,7 +169,7 @@ def train(
                     'state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                     'loss': val_loss,
-                }, os.path.join(save_dir, f"DDPM_{args.dataset}-{args.subsample if args.subsample else 'full'}-sample_epoch_{epoch+1}.pth"))
+                }, os.path.join(save_dir, f"DDPM_{args.dataset}-{args.subsample if args.subsample else 'full'}-sample-{args.seed}_epoch_{epoch+1}.pth"))
 
         if not args.dry_run:
             save_best_model(current_val=val_loss, epoch=epoch, model=model, optimizer=optimizer, criterion=val_loss)
@@ -180,16 +181,23 @@ def train(
             log_dir=log_dir,
         )
 
+def set_seeds(seed: int):
+    random.seed(seed) 
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+ 
+
 def main():
     os.makedirs(args.save_folder, exist_ok=True)
-    LOG_FOLDER = f"./{args.dataset}-experiment/{args.subsample if args.subsample else 'full'}-sample"
+    LOG_FOLDER = f"./{args.dataset.replace('Dataset', '')}-experiment/{args.subsample if args.subsample else 'full'}-sample"
     os.makedirs(LOG_FOLDER, exist_ok=True)
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    files = glob.glob(os.path.join(args.dataset_path, args.dataset, "train", "*.tif"))
+    files = sorted(glob.glob(os.path.join(args.dataset_path, args.dataset, "train", "*.tif")))
 
     if args.subsample is not None:
-        files = random.sample(files, args.subsample)
+        files = files[-args.subsample:] # temporary sanity check because from starting from the beginning, big drop in performance between 250 and 500 first
     transform = T.Compose([
         T.RandomHorizontalFlip(),
         T.RandomVerticalFlip(),
@@ -200,7 +208,8 @@ def main():
     print(f"[---] Training set size: {len(train_dataset)} [---]")
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False) 
 
-    valid_files = glob.glob(os.path.join(args.dataset_path, args.dataset, "valid", "*.tif")) 
+    valid_files = sorted(glob.glob(os.path.join(args.dataset_path, args.dataset, "valid", "*.tif"))) 
+    valid_files = valid_files[:100]
     valid_dataset = DatasetClass(files=valid_files, transform=None)
     print(f"[---] Validation set size: {len(valid_dataset)} [---]")
     valid_loader = DataLoader(valid_dataset, batch_size=args.batch_size*8, shuffle=False, drop_last=False) 
