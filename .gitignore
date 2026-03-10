@@ -10,5 +10,6 @@ static/
 templates/
 data/
 results/
+DendriticFActin-experiment/
 DendriticFActinDataset-experiment/
 axonalrings-experiment/
