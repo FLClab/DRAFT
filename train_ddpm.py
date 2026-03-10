@@ -159,7 +159,7 @@ def train(
         scheduler.step()
         loss_history.append(train_loss.avg)
         
-        val_loss = validation(model, valid_dataloader, device, epoch, log_dir=log_dir, display=(epoch % 10 == 0))
+        val_loss = validation(model, valid_dataloader, device, epoch, log_dir=log_dir, display=((epoch+1) % 10 == 0 and (epoch > 0)))
         val_loss_history.append(val_loss)
 
         if (epoch + 1) % 10 == 0:
@@ -182,14 +182,14 @@ def train(
 
 def main():
     os.makedirs(args.save_folder, exist_ok=True)
-    LOG_FOLDER = f"./{args.dataset}-experiment/{args.subsample if args.subsample else 'full'}-sample"
+    LOG_FOLDER = f"./{args.dataset.replace('Dataset', '')}-experiment/{args.subsample if args.subsample else 'full'}-sample"
     os.makedirs(LOG_FOLDER, exist_ok=True)
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    files = glob.glob(os.path.join(args.dataset_path, args.dataset, "train", "*.tif"))
+    files = sorted(glob.glob(os.path.join(args.dataset_path, args.dataset, "train", "*.tif")))
 
     if args.subsample is not None:
-        files = random.sample(files, args.subsample)
+        files = files[-args.subsample:] # temporary sanity check because from starting from the beginning, big drop in performance between 250 and 500 first
     transform = T.Compose([
         T.RandomHorizontalFlip(),
         T.RandomVerticalFlip(),
@@ -200,7 +200,8 @@ def main():
     print(f"[---] Training set size: {len(train_dataset)} [---]")
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False) 
 
-    valid_files = glob.glob(os.path.join(args.dataset_path, args.dataset, "valid", "*.tif")) 
+    valid_files = sorted(glob.glob(os.path.join(args.dataset_path, args.dataset, "valid", "*.tif"))) 
+    valid_files = valid_files[:100]
     valid_dataset = DatasetClass(files=valid_files, transform=None)
     print(f"[---] Validation set size: {len(valid_dataset)} [---]")
     valid_loader = DataLoader(valid_dataset, batch_size=args.batch_size*8, shuffle=False, drop_last=False) 
