@@ -293,9 +293,9 @@ def main():
 
     DatasetClass = DendriticFActinDataset if args.dataset == "DendriticFActinDataset" else AxonalRingsDataset
     
-    files = glob.glob(os.path.join(args.dataset_path, "train", "*.tif"))
+    files = sorted(glob.glob(os.path.join(args.dataset_path, "train", "*.tif")))
     if args.subsample is not None:
-        files = random.sample(files, args.subsample)
+        files = files[-args.subsample:]
 
     transform = T.Compose([
         T.RandomHorizontalFlip(),
@@ -304,8 +304,8 @@ def main():
     train_dataset = DatasetClass(files=files, transform=transform)
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False)
 
-    valid_files = glob.glob(os.path.join(args.dataset_path, "valid", "*.tif"))
-    valid_files = random.sample(valid_files, 100)
+    valid_files = sorted(glob.glob(os.path.join(args.dataset_path, "valid", "*.tif")))
+    valid_files = valid_files[:100]
     valid_dataset = DatasetClass(files=valid_files, transform=None)
     valid_dataloader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False) 
 

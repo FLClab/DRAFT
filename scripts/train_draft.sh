@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-#SBATCH --time=23:00:00 
+#SBATCH --time=48:00:00 
 #SBATCH --account=def-flavielc
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16Gb
@@ -8,7 +8,7 @@
 #SBATCH --output=logs/%x-%A_%a.out
 #SBATCH --mail-user=frbea320@ulaval.ca
 #SBATCH --mail-type=ALL
-#SBATCH --array=0-4
+#SBATCH --array=0-7
 
 export NCCL_DEBUG=INFO
 export NCCL_IB_DISABLE=0
@@ -23,7 +23,10 @@ source ~/phd/bin/activate
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 SUBSAMPLES=(
+    50
+    100
     250
+    300
     500
     1000
     2000
@@ -31,7 +34,10 @@ SUBSAMPLES=(
 )
 
 CHECKPOINTS=(
+    "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-50-sample.pth"
+    "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-100-sample.pth"
     "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-250-sample.pth"
+    "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-300-sample.pth"
     "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-500-sample.pth"
     "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-1000-sample.pth"
     "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-2000-sample.pth"
