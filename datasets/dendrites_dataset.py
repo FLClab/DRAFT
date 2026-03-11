@@ -62,10 +62,12 @@ class DendriticFActinDataset(Dataset):
 
         rings = rings.astype(np.uint8)
         fibers = fibers.astype(np.uint8)
-        m_conf, M_conf = np.min(confocal), np.max(confocal)
-        m_sted, M_sted = np.min(sted), np.max(sted)
+        m_conf, M_conf = np.quantile(confocal, [0.0001, 0.9999])
+        m_sted, M_sted = np.quantile(sted, [0.0001, 0.9999])
         confocal = (confocal - m_conf) / (M_conf - m_conf)
         sted = (sted - m_sted) / (M_sted - m_sted)
+        confocal = np.clip(confocal, 0, 1)
+        sted = np.clip(sted, 0, 1)
         # confocal = np.clip(confocal / 255.0, 0, 1)
         # sted = np.clip(sted / 255.0, 0, 1)
         

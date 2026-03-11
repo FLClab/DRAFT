@@ -21,16 +21,15 @@ from datasets.axons_dataset import AxonalRingsDataset
 from utils import AverageMeter, SaveBestModel
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--seed", type=int, default=43)
-parser.add_argument("--dataset", type=str, default="AxonalRings")
+parser.add_argument("--seed", type=int, default=42)
+parser.add_argument("--dataset", type=str, default="DendriticFActinDataset")
 parser.add_argument("--dataset-path", type=str, default=os.path.join(BASE_PATH, "Datasets"))
 parser.add_argument("--num-epochs", type=int, default=100)
 parser.add_argument("--batch-size", type=int, default=2)
 parser.add_argument("--dry-run", action="store_true")
-parser.add_argument("--save-folder", type=str, default=os.path.join(BASE_PATH, "baselines", "DRAFT", "AxonalRings"))
+parser.add_argument("--save-folder", type=str, default=os.path.join(BASE_PATH, "baselines", "DRAFT", "DendriticFActin"))
 parser.add_argument("--subsample", type=int, default=None)
 args = parser.parse_args()
-
 
 
 def training_logs(
@@ -182,22 +181,32 @@ def train(
         )
 
 def set_seeds(seed: int):
-    random.seed(seed) 
-    np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
+
+def set_data_seeds(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
  
 
 def main():
+    set_seeds(args.seed)
+    set_data_seeds(args.seed + 1)
+
     os.makedirs(args.save_folder, exist_ok=True)
     LOG_FOLDER = f"./{args.dataset.replace('Dataset', '')}-experiment/{args.subsample if args.subsample else 'full'}-sample"
     os.makedirs(LOG_FOLDER, exist_ok=True)
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    DEVICE = torch.device("cpu")
     
     files = sorted(glob.glob(os.path.join(args.dataset_path, args.dataset, "train", "*.tif")))
 
     if args.subsample is not None:
-        files = files[-args.subsample:] # temporary sanity check because from starting from the beginning, big drop in performance between 250 and 500 first
+        files = random.sample(files, args.subsample)
+        with open(os.path.join(LOG_FOLDER, f"subsampled_files-{args.seed}.txt"), "w") as f:
+            for file in files:
+                f.write(file + "\n")
+
     transform = T.Compose([
         T.RandomHorizontalFlip(),
         T.RandomVerticalFlip(),
@@ -208,11 +217,15 @@ def main():
     print(f"[---] Training set size: {len(train_dataset)} [---]")
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False) 
 
-    valid_files = sorted(glob.glob(os.path.join(args.dataset_path, args.dataset, "valid", "*.tif"))) 
-    valid_files = valid_files[:100]
+
+    valid_files_path = os.path.join(LOG_FOLDER, f"valid_files-{args.seed}.txt")
+    with open(valid_files_path, "r") as f:
+        valid_files = [line.strip() for line in f if line.strip()]
+
     valid_dataset = DatasetClass(files=valid_files, transform=None)
     print(f"[---] Validation set size: {len(valid_dataset)} [---]")
     valid_loader = DataLoader(valid_dataset, batch_size=args.batch_size*8, shuffle=False, drop_last=False) 
+    exit()
 
     latent_encoder, cfg = get_pretrained_model_v2(
         name="mae-lightning-small",
