@@ -60,7 +60,7 @@ def training_queries(
     ax.set_ylabel('Rewards / MSE')
     ax.legend()
     plt.tight_layout()
-    fig.savefig(os.path.join(log_dir, "training", f"DRAFT-{args.K}_training_queries_{args.subsample if args.subsample else 'full'}-sample.png"))
+    fig.savefig(os.path.join(log_dir, "training", f"DRAFT-training_queries_{args.subsample if args.subsample else 'full'}-sample-{args.seed}.png"))
     plt.close()
     
 
@@ -83,7 +83,7 @@ def training_logs(
     ax_twin.set_ylabel('Learning Rate')
     ax.legend()
     plt.tight_layout()
-    fig.savefig(os.path.join(log_dir, "training", f"DRAFT-{args.K}_training_logs_{args.subsample if args.subsample else 'full'}-sample.png"))
+    fig.savefig(os.path.join(log_dir, "training", f"DRAFT-training_logs_{args.subsample if args.subsample else 'full'}-sample-{args.seed}.png"))
     plt.close()
 
 
@@ -176,7 +176,7 @@ def train(
     log_dir: str,
     save_dir: str,
 ):
-    model_name = f"DRAFT-{args.dataset}-{args.subsample if args.subsample else 'full'}-sample-{args.K}-rank{args.lora_rank}"
+    model_name = f"DRAFT-{args.dataset}-{args.subsample if args.subsample else 'full'}-sample-{args.seed}-rank{args.lora_rank}"
     if args.use_low_variance and args.K == 1:
         model_name += "_LV"
     save_best_model = SaveBestModel(save_dir=save_dir, model_name=model_name, maximize=False)
@@ -242,7 +242,7 @@ def train(
         scheduler.step()
         loss_history.append(train_loss.avg)
         
-        val_loss, val_mse_loss, val_reward = validation(model, valid_dataloader, device, epoch, log_dir=log_dir, display=(epoch % 10 == 0))
+        val_loss, val_mse_loss, val_reward = validation(model, valid_dataloader, device, epoch, log_dir=log_dir, display=False)
         val_loss_history.append(val_loss)
         val_mse_loss_history.append(val_mse_loss)
         val_reward_history.append(val_reward)
@@ -265,7 +265,7 @@ def train(
                 'state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': val_loss,
-            }, os.path.join(save_dir, f"DRAFT-{args.dataset}-{args.subsample if args.subsample else 'full'}-sample-{args.K}-rank{args.lora_rank}_epoch_{epoch+1}.pth"))
+            }, os.path.join(save_dir, f"DRAFT-{args.dataset}-{args.subsample if args.subsample else 'full'}-sample-{args.seed}-rank{args.lora_rank}_epoch_{epoch+1}.pth"))
 
         if not args.dry_run:
             save_best_model(
@@ -287,26 +287,32 @@ def set_seeds(seed: int):
 
 def main():
     set_seeds(args.seed)
-    LOG_FOLDER = f"./{args.dataset}-experiment/DRAFT-{args.K}-rank{args.lora_rank}-{args.subsample if args.subsample else 'full'}-sample"
+    LOG_FOLDER = f"./{args.dataset}-experiment/DRAFT-rank{args.lora_rank}-{args.subsample if args.subsample else 'full'}-sample"
     os.makedirs(LOG_FOLDER, exist_ok=True)
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     DatasetClass = DendriticFActinDataset if args.dataset == "DendriticFActinDataset" else AxonalRingsDataset
     
-    files = sorted(glob.glob(os.path.join(args.dataset_path, "train", "*.tif")))
+    #files = sorted(glob.glob(os.path.join(args.dataset_path, "train", "*.tif")))
     if args.subsample is not None:
-        files = files[-args.subsample:]
-
+        train_files_path = os.path.join(os.path.dirname(LOG_FOLDER), f"DDPM-{args.subsample}-sample", f"subsampled_files-{args.seed}.txt")
+        with open(train_files_path, "r") as f:
+            files = [line.strip() for line in f if line.strip()] 
+            
     transform = T.Compose([
         T.RandomHorizontalFlip(),
         T.RandomVerticalFlip(),
     ])
     train_dataset = DatasetClass(files=files, transform=transform)
+    print(f"[---] Training set size: {len(train_dataset)} [---]")
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False)
 
-    valid_files = sorted(glob.glob(os.path.join(args.dataset_path, "valid", "*.tif")))
-    valid_files = valid_files[:100]
+    valid_files_path = os.path.join(os.path.dirname(LOG_FOLDER), "valid_files.txt")
+    with open(valid_files_path, "r") as f:
+        valid_files = [line.strip() for line in f if line.strip()]
+
     valid_dataset = DatasetClass(files=valid_files, transform=None)
+    print(f"[---] Validation set size: {len(valid_dataset)} [---]")
     valid_dataloader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False) 
 
     reward_backbone, cfg = get_pretrained_model_v2(
