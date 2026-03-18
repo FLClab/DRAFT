@@ -44,47 +44,90 @@ parser.add_argument("--n-lv-inner-loops", type=int, default=2, help="Number of D
 parser.add_argument("--max-queries", type=int, default=10_000)
 args = parser.parse_args()
 
-def load_ddpm(model_type: str, subsample: int):
+def load_models(model_type: str, subsample: int):
     base_path = os.path.join(args.ckpt_path, args.dataset)
-    model_name = f"{model_type}_{args.dataset}Dataset-{subsample}-sample.pth"
+    model_name = f"DRAFT-{args.dataset}Dataset-{subsample}-sample-1-rank8.pth"
     checkpoint_path = os.path.join(base_path, model_name) 
-    checkpoint = torch.load(checkpoint_path, weights_only=False)
-    latent_encoder, cfg = get_pretrained_model_v2(
+    ckpt = torch.load(checkpoint_path, weights_only=False)
+    reward_backbone, cfg = get_pretrained_model_v2(
         name="mae-lightning-small",
         weights="MAE_SMALL_STED",
         blocks="all",
-        path=None,
-        mask_ratio=0.0,
-        pretrained=False,
         as_classifier=True,
+        path=None,
+        pretrained=False,
+        mask_ratio=0.0,
         num_classes=4
     )
-    latent_encoder.eval()
-    denoising_model = UNet(
-        dim=64, 
+    reward_model = RewardEncoder(backbone=reward_backbone)
+    reward_model.eval()
+
+    draft_state_dict = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
+    denoising_model_standard = UNet(
+        dim=64,
         channels=2,
         out_dim=1,
         cond_dim=cfg.dim,
-        dim_mults=(1,2,4),
+        dim_mults=(1, 2, 4),
         condition_type=None,
         num_classes=4
     )
-    
-    diffusion_model = DDPM(
-        denoising_model=denoising_model, 
+    model_standard = DDPM(
+        denoising_model=denoising_model_standard,
         timesteps=1000,
         beta_schedule="linear",
-        condition_type=None,
-        latent_encoder=latent_encoder,
         concat_segmentation=True,
-    ) 
-    diffusion_model.load_state_dict(checkpoint["state_dict"], strict=True)
-    print(f"[---] Loaded best model for {subsample} from epoch {checkpoint['epoch']} [---]")
-    diffusion_model.eval()
-    return diffusion_model 
+        condition_type=None,
+        latent_encoder=reward_backbone,
+    )
+    standard_state_dict = {}
+    for key, value in draft_state_dict.items():
+        if "lora" in key:
+            continue  # skip LoRA-specific weights
+        remapped = key.replace(".conv.weight", ".weight").replace(".conv.bias", ".bias").replace(".linear.weight", ".weight").replace(".linear.bias", ".bias")
+        standard_state_dict[remapped] = value
+    model_standard.load_state_dict(standard_state_dict, strict=False)
+    model_standard.eval()
 
-def load_draft(model_type: str, subsample: int):
-    pass 
+    if model_type == "DDPM":
+        return model_standard 
+    else:
+
+        # --- DRaFT model ---
+        denoising_model_draft = UNet(
+            dim=64,
+            channels=2,
+            out_dim=1,
+            cond_dim=cfg.dim,
+            dim_mults=(1, 2, 4),
+            condition_type=None,
+            num_classes=4
+        )
+        model_draft = DRaFT_DDPM(
+            denoising_model=denoising_model_draft,
+            reward_encoder=reward_model,
+            timesteps=1000,
+            beta_schedule="linear",
+            K=args.K,
+            use_low_variance=args.use_low_variance,
+            reward_weight=args.reward_weight,
+            denoising_weight=args.denoising_weight,
+            num_sampling_steps=100,
+            eta=0.0,
+            use_lora=True,
+            lora_rank=args.lora_rank,
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            use_gradient_checkpointing=False,
+            condition_type=None,
+            latent_encoder=reward_backbone,
+            concat_segmentation=True,
+        )
+        model_draft.load_state_dict(draft_state_dict, strict=True)
+        model_draft.eval()
+        return model_draft
+
+
 
 def inference(
     model: nn.Module, 
@@ -106,13 +149,23 @@ def inference(
             sted_np = sted.squeeze().cpu().numpy()
             confocal_np = confocal.squeeze().cpu().numpy()
 
-            sample = model.ddim_sample_loop(
-                shape=(1, 1, 224, 224),
-                num_steps=100,
-                cond=None, 
-                segmentation=confocal,
-                progress=False
-            )
+            if model_type == "DDPM":
+
+                sample = model.ddim_sample_loop(
+                    shape=(1, 1, 224, 224),
+                    num_steps=100,
+                    cond=None, 
+                    segmentation=confocal,
+                    progress=False
+                )
+
+            else:
+                sample, _ = model.sample_with_reward(
+                    shape=(1, 1, 224, 224),                                         
+                    target_images=sted,
+                    cond=None,
+                    segmentation=confocal,
+                )
             sample_np = np.clip(sample.squeeze().cpu().numpy(), 0, 1)
             sample_metrics = compute_metrics(truth_image=sted_np, prediction_image=sample_np)
             mse, psnr, ssim = sample_metrics["mse"], sample_metrics["psnr"], sample_metrics["ssim"]
@@ -144,22 +197,35 @@ def bootstrap(data: np.ndarray, n_bootstraps: int = 100):
         bootstrap_means.append(np.mean(bootstrap_sample))
     return np.mean(bootstrap_means), np.std(bootstrap_means)
 
-def analyze_results(ddpm_results: dict, save_dir: str):
+def analyze_results(ddpm_results: dict, draft_results: dict, save_dir: str):
     for metric_key in ["mse", "psnr", "ssim"]:
         fig = plt.figure(figsize=(3,3))
         ax = fig.add_subplot(111)
-        metric_avgs = [] 
-        metric_stds = [] 
+        ddpm_metric_avgs = [] 
+        ddpm_metric_stds = [] 
+        draft_metric_avgs = [] 
+        draft_metric_stds = []
         for subsample in tqdm(ddpm_results.keys(), desc="... Aggregating results ..."):
-            data = ddpm_results[subsample][metric_key] 
-            bootstrap_mean, bootstrap_std = bootstrap(data)
-            metric_avgs.append(bootstrap_mean)
-            metric_stds.append(bootstrap_std)
-        metric_avgs = np.array(metric_avgs)
-        metric_stds = np.array(metric_stds)
+            ddpm_data = ddpm_results[subsample][metric_key] 
+            ddpm_bootstrap_mean, ddpm_bootstrap_std = bootstrap(ddpm_data)
+            ddpm_metric_avgs.append(ddpm_bootstrap_mean)
+            ddpm_metric_stds.append(ddpm_bootstrap_std)
+            try:
+                draft_data = draft_results[subsample][metric_key] 
+                draft_bootstrap_mean, draft_bootstrap_std = bootstrap(draft_data)
+                draft_metric_avgs.append(draft_bootstrap_mean)
+                draft_metric_stds.append(draft_bootstrap_std)
+            except:
+                continue
+
+        ddpm_metric_avgs = np.array(ddpm_metric_avgs)
+        ddpm_metric_stds = np.array(ddpm_metric_stds)
+        draft_metric_avgs = np.array(draft_metric_avgs)
+        draft_metric_stds = np.array(draft_metric_stds)
         x = np.arange(len(ddpm_results.keys())) 
-        ax.plot(x, metric_avgs, color="tab:blue", marker='o', label="DDPM")
-        ax.fill_between(x, metric_avgs - metric_stds, metric_avgs + metric_stds, color="tab:blue", alpha=0.2)
+        x_draft = np.arange(len(draft_results.keys()))
+        ax.plot(x, ddpm_metric_avgs, color="tab:blue", marker='o', label="DDPM")
+        ax.plot(x_draft, draft_metric_avgs, color="#CC503E", marker='o', label="DRaFT")
         ax.set_xlabel("Subsample size")
         ax.set_ylabel(metric_key)
         ax.set_xticks(x)
@@ -172,17 +238,26 @@ def analyze_results(ddpm_results: dict, save_dir: str):
 
 
 def main():
-    LOG_FOLDER = os.path.join(f"./{args.dataset}-experiment/results") 
+    LOG_FOLDER = os.path.join(f"./{args.dataset}-experiment/results/{args.model}") 
     os.makedirs(LOG_FOLDER, exist_ok=True)
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if args.eval_only:
+        LOG_FOLDER = os.path.dirname(LOG_FOLDER)
         ddpm_results = {}
+        draft_results = {}
         for subsample in args.subsamples:
-            temp_results = np.load(os.path.join(LOG_FOLDER, f"{args.model}-{subsample}-sample.npz"))
-            temp_results = {key: np.array(temp_results[key]) for key in temp_results.keys()}
-            ddpm_results[subsample] = temp_results
-        analyze_results(ddpm_results=ddpm_results, save_dir=LOG_FOLDER)
+            if os.path.exists(os.path.join(LOG_FOLDER, "DDPM", f"DDPM-{subsample}-sample.npz")):
+                temp_ddim_results = np.load(os.path.join(LOG_FOLDER, "DDPM", f"DDPM-{subsample}-sample.npz"))
+                temp_ddim_results = {key: np.array(temp_ddim_results[key]) for key in temp_ddim_results.keys()}
+                ddpm_results[subsample] = temp_ddim_results
+
+            if os.path.exists(os.path.join(LOG_FOLDER, "DRAFT", f"DRAFT-{subsample}-sample.npz")):
+                temp_draft_results = np.load(os.path.join(LOG_FOLDER, "DRAFT", f"DRAFT-{subsample}-sample.npz"))
+                temp_draft_results = {key: np.array(temp_draft_results[key]) for key in temp_draft_results.keys()}
+                draft_results[subsample] = temp_draft_results
+
+        analyze_results(ddpm_results=ddpm_results, draft_results=draft_results, save_dir=LOG_FOLDER)
 
     else:
         files = glob.glob(os.path.join(args.dataset_path, f"{args.dataset}Dataset", "test", "*.tif"))
@@ -191,12 +266,15 @@ def main():
         print(f"[---] Test dataset size: {len(test_dataset)} [---]")
         test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=False)
         for subsample in args.subsamples:
-            model = load_ddpm(model_type=args.model, subsample=subsample).to(DEVICE)
+            
+            model = load_models(model_type=args.model, subsample=subsample).to(DEVICE)
             results = inference(model=model, dataloader=test_dataloader, device=DEVICE, save_dir=LOG_FOLDER, model_type=args.model, subsample=subsample)
             np.savez(
                 os.path.join(LOG_FOLDER, f"{args.model}-{subsample}-sample.npz"),
                 **results
             )
+            
+                
 
 
 if __name__ == "__main__":
