@@ -11,5 +11,6 @@ templates/
 data/
 results/
 DendriticFActin-experiment/
+dendrites-examples/
 DendriticFActinDataset-experiment/
 axonalrings-experiment/
