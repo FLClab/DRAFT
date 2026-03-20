@@ -1,13 +1,14 @@
 #!/bin/bash 
 
-#SBATCH --time=48:00:00 
+#SBATCH --time=2:00:00 
 #SBATCH --account=def-flavielc
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16Gb
-#SBATCH --gpus=h100:1
+#SBATCH --gpus=nvidia_h100_80gb_hbm3_3g.40gb:1
 #SBATCH --output=logs/%x-%A_%a.out
 #SBATCH --mail-user=frbea320@ulaval.ca
 #SBATCH --mail-type=ALL
+#SBATCH --array=0-4
 
 export NCCL_DEBUG=INFO
 export NCCL_IB_DISABLE=0
@@ -21,12 +22,22 @@ source ~/phd/bin/activate
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
+SEEDS=(
+    9
+    42
+    87
+    97
+    99
+)
+
+
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% Beginning..."
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 
-python train_draft.py --K 1 --use-low-variance
+seed=${SEEDS[$SLURM_ARRAY_TASK_ID]}
+srun python inference_subsample.py --model DDPM --seed $seed
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% DONE %"

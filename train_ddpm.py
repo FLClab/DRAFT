@@ -194,10 +194,9 @@ def main():
     set_data_seeds(args.seed + 1)
 
     os.makedirs(args.save_folder, exist_ok=True)
-    LOG_FOLDER = f"./{args.dataset.replace('Dataset', '')}-experiment/{args.subsample if args.subsample else 'full'}-sample"
+    LOG_FOLDER = f"./{args.dataset}-experiment/DDPM-{args.subsample if args.subsample else 'full'}-sample"
     os.makedirs(LOG_FOLDER, exist_ok=True)
-    # DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    DEVICE = torch.device("cpu")
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     files = sorted(glob.glob(os.path.join(args.dataset_path, args.dataset, "train", "*.tif")))
 
@@ -218,14 +217,14 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False) 
 
 
-    valid_files_path = os.path.join(LOG_FOLDER, f"valid_files-{args.seed}.txt")
+
+    valid_files_path = os.path.join(os.path.dirname(LOG_FOLDER), f"valid_files.txt")
     with open(valid_files_path, "r") as f:
         valid_files = [line.strip() for line in f if line.strip()]
 
     valid_dataset = DatasetClass(files=valid_files, transform=None)
     print(f"[---] Validation set size: {len(valid_dataset)} [---]")
     valid_loader = DataLoader(valid_dataset, batch_size=args.batch_size*8, shuffle=False, drop_last=False) 
-    exit()
 
     latent_encoder, cfg = get_pretrained_model_v2(
         name="mae-lightning-small",
