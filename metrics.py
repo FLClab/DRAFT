@@ -32,6 +32,16 @@ def compute_aupr(truth: np.ndarray, prediction: np.ndarray) -> float:
         precision, recall, _ = precision_recall_curve(t, p) 
         return auc(recall, precision)
 
+
+def compute_dice(truth: np.ndarray, prediction: np.ndarray) -> float:
+    t, p = truth.ravel().astype(bool), prediction.ravel().astype(bool)
+    
+    intersection = np.sum(t & p)
+    denominator = np.sum(t) + np.sum(p)
+    if denominator == 0:
+        return 1.0
+    return 2.0 * intersection / denominator
+
 def compute_metrics(
     truth_image: np.ndarray,
     prediction_image: np.ndarray,
@@ -45,7 +55,7 @@ def compute_metrics(
     if truth_segmentation is None or prediction_segmentation is None:
         return metrics 
     else:
-        metrics["rings_aupr"] = compute_aupr(truth_segmentation[0], prediction_segmentation[0])
-        metrics["fibers_aupr"] = compute_aupr(truth_segmentation[1], prediction_segmentation[1])
+        metrics["rings_dice"] = compute_dice(truth_segmentation[0], prediction_segmentation[0])
+        metrics["fibers_dice"] = compute_dice(truth_segmentation[1], prediction_segmentation[1])
         return metrics
 
