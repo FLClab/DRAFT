@@ -15,17 +15,22 @@ from scipy.stats import mannwhitneyu, wilcoxon, ttest_ind
 from tqdm import tqdm, trange 
 from diffusion_model import DDPM 
 from tqdm import tqdm, trange 
+import tifffile
+from tiffwrapper import make_composite
 import glob 
 import matplotlib.pyplot as plt
 from metrics import compute_metrics 
+from segmentation_unet import SegmentationUNet
 
 parser = argparse.ArgumentParser() 
+parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--dataset", type=str, default="DendriticFActin")
 parser.add_argument("--dataset-path", type=str, default=os.path.join(BASE_PATH, "Datasets"))
-parser.add_argument("--subsamples", nargs="+", type=int, default=[50, 100, 300, 500, 1000, 2000, 3000])
+parser.add_argument("--subsamples", nargs="+", type=int, default=[50, 100, 250, 300, 500, 1000, 2000, 3000])
 parser.add_argument("--eval-only", action="store_true", default=False)
 parser.add_argument("--model", type=str, default="DDPM")
 parser.add_argument("--ckpt-path", type=str, default=os.path.join(BASE_PATH, "baselines", "DRAFT"))
+parser.add_argument("--unet-checkpoint", type=str, default=os.path.join(BASE_PATH, "baselines", "pretrained-unet-01", "params.net"))
 ### DRaFT specific arguments
 parser.add_argument("--K", type=int, default=1)
 parser.add_argument("--num-sampling-steps", type=int, default=100)
@@ -41,13 +46,54 @@ parser.add_argument("--learning-rate", type=float, default=1e-4)
 parser.add_argument("--use-gradient-checkpointing", action="store_true", default=True, help="Use gradient checkpointing (highly recommended!)")
 parser.add_argument("--no-gradient-checkpointing", action="store_false", dest="use_gradient_checkpointing")
 parser.add_argument("--n-lv-inner-loops", type=int, default=2, help="Number of DRaFT-LV inner loops (paper uses n=2)")
-parser.add_argument("--max-queries", type=int, default=10_000)
 args = parser.parse_args()
+
+def load_ddpm(subsample: int):
+    base_path = os.path.join(args.ckpt_path, args.dataset)
+    model_name = f"DDPM_{args.dataset}Dataset-{subsample}-sample-{args.seed}.pth"
+    checkpoint_path = os.path.join(base_path, model_name)
+    ckpt = torch.load(checkpoint_path, weights_only=False)
+    latent_encoder, cfg = get_pretrained_model_v2(
+        name="mae-lightning-small",
+        weights="MAE_SMALL_STED",
+        blocks="all",
+        path=None,
+        mask_ratio=0.0,
+        pretrained=False,
+        as_classifier=True,
+        num_classes=4
+    )
+    denoising_model = UNet(
+        dim=64,
+        channels=2,
+        out_dim=1,
+        cond_dim=cfg.dim,
+        dim_mults=(1,2,4),
+        condition_type=None,
+        num_classes=4
+    )
+    diffusion_model = DDPM(
+        denoising_model=denoising_model,
+        timesteps=1000,
+        beta_schedule="linear",
+        condition_type=None,
+        latent_encoder=latent_encoder,
+        concat_segmentation=True,
+    )
+    diffusion_model.load_state_dict(ckpt["state_dict"], strict=True)
+    print(f"[---] Loaded best DDPM model for {subsample} from epoch {ckpt['epoch']} [---]")
+    diffusion_model.eval()
+    return diffusion_model
+    
+
+    
 
 def load_models(model_type: str, subsample: int):
     base_path = os.path.join(args.ckpt_path, args.dataset)
-    model_name = f"DRAFT-{args.dataset}Dataset-{subsample}-sample-1-rank8.pth"
+    model_name = f"DRAFT-{args.dataset}Dataset-{subsample}-sample-{args.seed}-rank8.pth"
     checkpoint_path = os.path.join(base_path, model_name) 
+    if True:
+        return load_ddpm(subsample=subsample) # Soon deprecated case where DRAFT fine-tuning has not been done yet
     ckpt = torch.load(checkpoint_path, weights_only=False)
     reward_backbone, cfg = get_pretrained_model_v2(
         name="mae-lightning-small",
@@ -127,27 +173,39 @@ def load_models(model_type: str, subsample: int):
         model_draft.eval()
         return model_draft
 
-
+def compute_segmentation(sample: torch.Tensor, unet: nn.Module, device: torch.device):
+    raw = unet(sample).squeeze().cpu().numpy()
+    segmentation = np.zeros_like(raw)
+    segmentation[0] = raw[0] > 0.25 
+    segmentation[1] = raw[1] > 0.4
+    return segmentation.astype(np.uint8)
 
 def inference(
     model: nn.Module, 
     dataloader: DataLoader, 
+    unet: nn.Module,
     device: torch.device, 
     save_dir: str,
+    image_dir: str,
     model_type: str,
     subsample: int,
     ):
     model.eval()
-    image_outdir = os.path.join(save_dir, f"{model_type}_{subsample}-sample")
+    image_outdir = os.path.join(save_dir, f"{model_type}_{subsample}-sample-{args.seed}")
     os.makedirs(image_outdir, exist_ok=True)
-    results = {key: [] for key in ["mse", "psnr", "ssim"]}
+    results = {key: [] for key in ["mse", "psnr", "ssim", "rings_dice", "fibers_dice"]}
     with torch.no_grad():
         for batch in tqdm(dataloader, desc=f"... Inferring {model_type}_{subsample}-sample samples ..."):
-            confocal, sted, _, metadata = batch 
+            confocal, sted, ground_truth, metadata = batch 
+            ground_truth = ground_truth.squeeze().cpu().numpy() 
+            gt_rgb = make_composite(ground_truth, luts=['green', 'magenta'], ranges=[(0,1), (0,1)])
             confocal = confocal.to(device)
             sted = sted.to(device) 
+            tiff_data = []
             sted_np = sted.squeeze().cpu().numpy()
             confocal_np = confocal.squeeze().cpu().numpy()
+            tiff_data.append(confocal_np)
+            tiff_data.append(sted_np)
 
             if model_type == "DDPM":
 
@@ -166,26 +224,38 @@ def inference(
                     cond=None,
                     segmentation=confocal,
                 )
+
+            segmentation = compute_segmentation(sample=sample, unet=unet, device=device)
+            segmentation_rgb = make_composite(segmentation, luts=['green', 'magenta'], ranges=[(0,1), (0,1)])
             sample_np = np.clip(sample.squeeze().cpu().numpy(), 0, 1)
-            sample_metrics = compute_metrics(truth_image=sted_np, prediction_image=sample_np)
-            mse, psnr, ssim = sample_metrics["mse"], sample_metrics["psnr"], sample_metrics["ssim"]
+            tiff_data.append(sample_np)
+            sample_metrics = compute_metrics(
+                truth_image=sted_np, 
+                prediction_image=sample_np, 
+                truth_segmentation=ground_truth,
+                prediction_segmentation=segmentation,
+                )
+            mse, psnr, ssim, rings_dice, fibers_dice = sample_metrics["mse"], sample_metrics["psnr"], sample_metrics["ssim"], sample_metrics["rings_dice"], sample_metrics["fibers_dice"]
             for key in sample_metrics.keys():
                 results[key].append(sample_metrics[key]) 
-            fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+            fig, axs = plt.subplots(1, 5, figsize=(20, 5))
             axs[0].imshow(confocal_np, cmap="hot", vmin=0, vmax=1)
             axs[1].imshow(sted_np, cmap="hot", vmin=0, vmax=1)
             axs[2].imshow(sample_np, cmap="hot", vmin=0, vmax=1)
-            
+            axs[3].imshow(gt_rgb)
+            axs[4].imshow(segmentation_rgb)
             axs[0].set_title("Confocal")
             axs[1].set_title("STED")
-            axs[2].set_title(f"MSE: {mse:.4f}\nPSNR: {psnr:.4f}\nSSIM: {ssim:.4f}")         
+            axs[2].set_title(f"MSE: {mse:.4f}\nPSNR: {psnr:.4f}\nSSIM: {ssim:.4f}")     
+            axs[4].set_title(f"Rings: {rings_dice:.4f}\nFibers: {fibers_dice:.4f}")    
             for ax in axs:
-                
                 ax.axis("off")
             plt.tight_layout()
             savename = os.path.basename(metadata["image_path"][0].replace(".tif", ""))
-            fig.savefig(os.path.join(image_outdir, f"{savename}.pdf"), dpi=900, bbox_inches="tight")
+            fig.savefig(os.path.join(image_outdir, f"{savename}.png"), dpi=900, bbox_inches="tight")
             plt.close(fig)
+            tiff_data = np.stack(tiff_data, axis=0)
+            tifffile.imwrite(os.path.join(image_dir, f"{savename}_{args.model}_{subsample}-sample-{args.seed}.tif"), data=tiff_data.astype(np.float32))
          
     return results 
 
@@ -235,10 +305,18 @@ def analyze_results(ddpm_results: dict, draft_results: dict, save_dir: str):
         fig.savefig(os.path.join(save_dir, f"{metric_key}.pdf"), dpi=900, bbox_inches="tight")
         plt.close(fig)
 
+def load_unet(checkpoint_unet: str, device: torch.device):
+    unet = SegmentationUNet(in_channels=1, out_channels=2)
+    unet.load_state_dict(torch.load(checkpoint_unet, map_location=device))
+    unet.to(device)
+    unet.eval()
+    return unet
+
 
 
 def main():
     LOG_FOLDER = os.path.join(f"./{args.dataset}-experiment/results/{args.model}") 
+    
     os.makedirs(LOG_FOLDER, exist_ok=True)
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -260,17 +338,30 @@ def main():
         analyze_results(ddpm_results=ddpm_results, draft_results=draft_results, save_dir=LOG_FOLDER)
 
     else:
+        unet = load_unet(checkpoint_unet=args.unet_checkpoint, device=DEVICE)
         files = glob.glob(os.path.join(args.dataset_path, f"{args.dataset}Dataset", "test", "*.tif"))
         
-        test_dataset = DendriticFActinDataset(files=files, split="test", coordinates_path="/home-local/Frederic/Datasets/DendriticFActinDataset-exported")
+        test_dataset = DendriticFActinDataset(files=files, split="test", coordinates_path=os.path.join(BASE_PATH, "Datasets", f"{args.dataset}Dataset-exported"))
         print(f"[---] Test dataset size: {len(test_dataset)} [---]")
         test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=False)
         for subsample in args.subsamples:
-            
+            RESULTS_FOLDER = os.path.join(BASE_PATH, "baselines", args.dataset, "results", f"{subsample}-sample")
+            TIF_FOLDER = os.path.join(BASE_PATH, "baselines", args.dataset, "results", f"{subsample}-sample", "images")
+            os.makedirs(RESULTS_FOLDER, exist_ok=True)
+            os.makedirs(TIF_FOLDER, exist_ok=True)
             model = load_models(model_type=args.model, subsample=subsample).to(DEVICE)
-            results = inference(model=model, dataloader=test_dataloader, device=DEVICE, save_dir=LOG_FOLDER, model_type=args.model, subsample=subsample)
+
+            results = inference(
+                model=model, 
+                dataloader=test_dataloader, 
+                unet=unet,
+                device=DEVICE, 
+                save_dir=LOG_FOLDER, 
+                image_dir=TIF_FOLDER,
+                model_type=args.model, 
+                subsample=subsample)
             np.savez(
-                os.path.join(LOG_FOLDER, f"{args.model}-{subsample}-sample.npz"),
+                os.path.join(LOG_FOLDER, f"{args.model}-{subsample}-sample-{args.seed}.npz"),
                 **results
             )
             
