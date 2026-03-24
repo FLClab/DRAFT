@@ -37,7 +37,7 @@ echo "% Beginning..."
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 
 seed=${SEEDS[$SLURM_ARRAY_TASK_ID]}
-srun python inference_subsample.py --model DDPM --seed $seed
+srun python inference_subsample.py --model DDPM --seed $seed --subsamples 1000 2000 3000
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% DONE %"

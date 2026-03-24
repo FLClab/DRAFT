@@ -8,7 +8,7 @@
 #SBATCH --output=logs/%x-%A_%a.out
 #SBATCH --mail-user=frbea320@ulaval.ca
 #SBATCH --mail-type=ALL
-#SBATCH --array=0-4
+
 
 export NCCL_DEBUG=INFO
 export NCCL_IB_DISABLE=0
@@ -22,36 +22,37 @@ source ~/phd/bin/activate
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
-SUBSAMPLES=(
-    3000
-)
+# SUBSAMPLES=(
+#     3000
+# )
 
-SEEDS=(
-    9
-    42
-    87
-    97
-    99
-)
+# SEEDS=(
+#     9
+#     42
+#     87
+#     97
+#     99
+# )
 
-opts=()
-for subsample in "${SUBSAMPLES[@]}"
-do
-    for seed in "${SEEDS[@]}"
-    do
-            opts+=("$subsample;$seed")
-    done
-done
+# opts=()
+# for subsample in "${SUBSAMPLES[@]}"
+# do
+#     for seed in "${SEEDS[@]}"
+#     do
+#             opts+=("$subsample;$seed")
+#     done
+# done
 
-echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
-echo "% Beginning..."
-echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+# echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+# echo "% Beginning..."
+# echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 
-IFS=';' read -r -a opt <<< "${opts[${SLURM_ARRAY_TASK_ID}]}"
-subsample="${opt[0]}"
-seed="${opt[1]}"
+# IFS=';' read -r -a opt <<< "${opts[${SLURM_ARRAY_TASK_ID}]}"
+# subsample="${opt[0]}"
+# seed="${opt[1]}"
 
-python train_ddpm.py --dataset DendriticFActinDataset --subsample $subsample --seed $seed
+#python train_ddpm.py --dataset DendriticFActinDataset --subsample 1000 --seed 97
+python train_ddpm.py --dataset DendriticFActinDataset --subsample 2000 --seed 99
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% DONE %"
