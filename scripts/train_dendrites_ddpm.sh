@@ -8,6 +8,7 @@
 #SBATCH --output=logs/%x-%A_%a.out
 #SBATCH --mail-user=frbea320@ulaval.ca
 #SBATCH --mail-type=ALL
+#SBATCH --array=0-4
 
 
 export NCCL_DEBUG=INFO
@@ -26,13 +27,13 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 #     3000
 # )
 
-# SEEDS=(
-#     9
-#     42
-#     87
-#     97
-#     99
-# )
+SEEDS=(
+    9
+    42
+    87
+    97
+    99
+)
 
 # opts=()
 # for subsample in "${SUBSAMPLES[@]}"
@@ -52,7 +53,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 # seed="${opt[1]}"
 
 #python train_ddpm.py --dataset DendriticFActinDataset --subsample 1000 --seed 97
-python train_ddpm.py --dataset DendriticFActinDataset --subsample 2000 --seed 99
+python train_ddpm.py --dataset DendriticFActinDataset --seed ${SEEDS[${SLURM_ARRAY_TASK_ID}]}
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% DONE %"

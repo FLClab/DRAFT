@@ -93,7 +93,8 @@ def load_models(model_type: str, subsample: int):
     base_path = os.path.join(args.ckpt_path, args.dataset)
     model_name = f"DRAFT-{args.dataset}Dataset-{subsample}-sample-{args.seed}-rank8.pth"
     checkpoint_path = os.path.join(base_path, model_name) 
-    if True:
+    if model_type == "DDPM" and not os.path.exists(checkpoint_path):
+        print(f"[---] DRaFT model does not exist yet, checkpointing DDIM directly [---]")
         return load_ddpm(subsample=subsample) # Soon deprecated case where DRAFT fine-tuning has not been done yet
     ckpt = torch.load(checkpoint_path, weights_only=False)
     reward_backbone, cfg = get_pretrained_model_v2(
@@ -366,12 +367,20 @@ def main():
         test_dataset = DendriticFActinDataset(files=files, split="test", coordinates_path=os.path.join(BASE_PATH, "Datasets", f"{args.dataset}Dataset-exported"))
         print(f"[---] Test dataset size: {len(test_dataset)} [---]")
         test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=False)
+        missing_models = []
         for subsample in args.subsamples:
             RESULTS_FOLDER = os.path.join(BASE_PATH, "baselines", args.dataset, "results", f"{subsample}-sample")
             TIF_FOLDER = os.path.join(BASE_PATH, "baselines", args.dataset, "results", f"{subsample}-sample", "images")
+            if os.path.exists(os.path.join(LOG_FOLDER, f"{args.model}-{subsample}-sample-{args.seed}.npz")):
+                print(f"[---] Results already exist for {args.model}-{subsample}-sample-{args.seed}, skipping... [---]")
+                continue
             os.makedirs(RESULTS_FOLDER, exist_ok=True)
             os.makedirs(TIF_FOLDER, exist_ok=True)
-            model = load_models(model_type=args.model, subsample=subsample).to(DEVICE)
+            try:
+                model = load_models(model_type=args.model, subsample=subsample).to(DEVICE)
+            except FileNotFoundError:
+                missing_models.append(f"{args.model}-{subsample}-{args.seed}")
+                continue
 
             results = inference(
                 model=model, 
@@ -386,6 +395,10 @@ def main():
                 os.path.join(LOG_FOLDER, f"{args.model}-{subsample}-sample-{args.seed}.npz"),
                 **results
             )
+
+        if len(missing_models) > 0:
+            for m in missing_models:
+                print(f"\tMissing {m}")
             
                 
 
