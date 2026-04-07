@@ -86,16 +86,20 @@ def load_ddpm(subsample: int):
     diffusion_model.eval()
     return diffusion_model
     
-
+def load_pix2pix(subsample: int):
+    pass
     
 
 def load_models(model_type: str, subsample: int):
+    if model_type == "Pix2Pix":
+        return load_pix2pix(subsample=subsample)
+
     base_path = os.path.join(args.ckpt_path, args.dataset)
     model_name = f"DRAFT-{args.dataset}Dataset-{subsample}-sample-{args.seed}-rank8.pth"
     checkpoint_path = os.path.join(base_path, model_name) 
-    if model_type == "DDPM" and not os.path.exists(checkpoint_path):
-        print(f"[---] DRaFT model does not exist yet, checkpointing DDIM directly [---]")
+    if not os.path.exists(checkpoint_path):
         return load_ddpm(subsample=subsample) # Soon deprecated case where DRAFT fine-tuning has not been done yet
+
     ckpt = torch.load(checkpoint_path, weights_only=False)
     reward_backbone, cfg = get_pretrained_model_v2(
         name="mae-lightning-small",
@@ -261,6 +265,18 @@ def inference(
          
     return results 
 
+def inference_pix2pix(
+    model: nn.Module, 
+    dataloader: DataLoader,
+    unet: nn.Module,
+    device: torch.device,
+    save_dir: str,
+    image_dir: str,
+    model_type: str,
+    subsample: int,
+):
+    pass
+
 def bootstrap(data: np.ndarray, n_bootstraps: int = 100):
     num_samples = len(data)
     bootstrap_means = [] 
@@ -281,6 +297,7 @@ def analyze_results(ddpm_results: dict, draft_results: dict, save_dir: str):
             ddpm_data = ddpm_results[subsample][metric_key] 
             print(f"\n[---] Number of DDPM seeds for {subsample} subsample: {len(ddpm_data)} [---]")
             # ddpm_bootstrap_mean, ddpm_bootstrap_std = bootstrap(ddpm_data)
+           
             ddpm_metric_avgs.append(np.mean(ddpm_data))
             ddpm_metric_stds.append(np.std(ddpm_data))
             try:
@@ -289,6 +306,10 @@ def analyze_results(ddpm_results: dict, draft_results: dict, save_dir: str):
                 # draft_bootstrap_mean, draft_bootstrap_std = bootstrap(draft_data)
                 draft_metric_avgs.append(np.mean(draft_data))
                 draft_metric_stds.append(np.std(draft_data))
+                _, pvalue = mannwhitneyu(ddpm_data, draft_data) 
+                with open(os.path.join(save_dir, f"{metric_key}.txt"), "a") as f:
+                    f.write(f"{subsample}-{metric_key}: {pvalue:.5f}\n")
+                # print(f"\t{metric_key} p-value: {pvalue:.6f}")
             except:
                 continue
 
@@ -307,8 +328,7 @@ def analyze_results(ddpm_results: dict, draft_results: dict, save_dir: str):
         ax.set_xticks(x)
         ax.set_xticklabels(list(ddpm_results.keys()))
         ax.legend()
-        plt.tight_layout()
-        fig.savefig(os.path.join(save_dir, f"{metric_key}.pdf"), dpi=900, bbox_inches="tight")
+        fig.savefig(os.path.join(save_dir, f"{metric_key}.pdf"), dpi=900, transparent=True, bbox_inches="tight")
         plt.close(fig)
 
 def load_unet(checkpoint_unet: str, device: torch.device):
@@ -382,15 +402,28 @@ def main():
                 missing_models.append(f"{args.model}-{subsample}-{args.seed}")
                 continue
 
-            results = inference(
-                model=model, 
-                dataloader=test_dataloader, 
-                unet=unet,
-                device=DEVICE, 
-                save_dir=LOG_FOLDER, 
-                image_dir=TIF_FOLDER,
-                model_type=args.model, 
-                subsample=subsample)
+            if args.model != f"Pix2Pix":
+                
+                results = inference(
+                    model=model, 
+                    dataloader=test_dataloader, 
+                    unet=unet,
+                    device=DEVICE, 
+                    save_dir=LOG_FOLDER, 
+                    image_dir=TIF_FOLDER,
+                    model_type=args.model, 
+                    subsample=subsample) 
+            else:
+                results = inference_pix2pix(
+                    model=model,
+                    dataloader=test_dataloader,
+                    unet=unet, 
+                    device=DEVICE,
+                    save_dir=LOG_FOLDER,
+                    image_dir=TIF_FOLDER,
+                    model_type=args.model,
+                    subsample=subsample
+                )
             np.savez(
                 os.path.join(LOG_FOLDER, f"{args.model}-{subsample}-sample-{args.seed}.npz"),
                 **results
