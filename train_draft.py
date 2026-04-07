@@ -293,7 +293,7 @@ def main():
 
     DatasetClass = DendriticFActinDataset if args.dataset == "DendriticFActinDataset" else AxonalRingsDataset
     
-    #files = sorted(glob.glob(os.path.join(args.dataset_path, "train", "*.tif")))
+    files = sorted(glob.glob(os.path.join(args.dataset_path, "train", "*.tif")))
     if args.subsample is not None:
         train_files_path = os.path.join(os.path.dirname(LOG_FOLDER), f"DDPM-{args.subsample}-sample", f"subsampled_files-{args.seed}.txt")
         with open(train_files_path, "r") as f:
