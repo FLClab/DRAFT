@@ -3,8 +3,9 @@ from torch import nn
 import networks 
 
 class Pix2Pix(nn.Module):
-    def __init__(self, in_channels: int = 1, out_channels: int = 1):
+    def __init__(self, num_epochs: int = 100, in_channels: int = 1, out_channels: int = 1):
         super(Pix2Pix, self).__init__() 
+        self.num_epochs = num_epochs
         self.loss_names = ["G_GAN", "G_GEN", "D_real", "D_fake"]
         self.visual_names = ["real_conf", "fake_STED", "real_STED"]
         if self.train:
@@ -29,7 +30,11 @@ class Pix2Pix(nn.Module):
             self.criterionMSE = nn.MSELoss()
             self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=0.0002, betas=(0.5, 0.999))
             self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=0.0002, betas=(0.5, 0.999))
-
+            self.optimizers = [self.optimizer_G, self.optimizer_D] 
+            self.schedulers = [
+                networks.get_scheduler(optimizer, "cosine", T_max=self.num_epochs) for optimizer in self.optimizers
+            ]
+            
     def set_requires_grad(self, nets, requires_grad=False):
         """Set requies_grad=Fasle for all the networks to avoid unnecessary computations
         Parameters:
@@ -44,8 +49,14 @@ class Pix2Pix(nn.Module):
                     param.requires_grad = requires_grad
 
     def set_input(self, batch: torch.Tensor):
-        self.real_conf = batch[0]
-        self.real_sted = batch[1]
+        device = next(self.parameters()).device
+        self.real_conf = batch[0].to(device)
+        self.real_sted = batch[1].to(device)
+
+    def update_learning_rate(self):
+        """Update learning rates for all the networks; called at the end of every epoch"""
+        for scheduler in self.schedulers:
+            scheduler.step()
 
 
     def forward(self):

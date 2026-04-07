@@ -46,3 +46,32 @@ class SaveBestModel:
                     'optimizer_state_dict': optimizer.state_dict(),
                     'loss': criterion,
                 }, '{}/{}.pth'.format(self.save_dir, self.model_name))
+
+class SaveBestPix2PixModel:
+    def __init__(self, save_dir: str, model_name: str, maximize: bool = False):
+
+        self.maximize = maximize
+        if maximize:
+            self.best_val = float('-inf')
+        else:
+            self.best_val = float('inf')
+
+        self.model_name = model_name
+        self.save_dir = save_dir
+
+    def __call__(self, current_val: float, epoch: int, model):
+        if self.maximize:
+            new_best = current_val > self.best_val
+        else:
+            new_best = current_val < self.best_val
+
+        if new_best:
+            self.best_val = current_val
+            print(f"Best loss: {self.best_val}")
+            print(f"Saving best model for epoch: {epoch + 1} at {self.save_dir}\n")
+            torch.save({
+                    'epoch': epoch + 1,
+                    'state_dict': model.state_dict(),
+                    'optimizer_state_dict': [optimizer.state_dict() for optimizer in model.optimizers],
+                    'scheduler_state_dict': [scheduler.state_dict() for scheduler in model.schedulers],
+                }, '{}/{}.pth'.format(self.save_dir, self.model_name))
