@@ -285,7 +285,7 @@ def bootstrap(data: np.ndarray, n_bootstraps: int = 100):
         bootstrap_means.append(np.mean(bootstrap_sample))
     return np.mean(bootstrap_means), np.std(bootstrap_means)
 
-def analyze_results(ddpm_results: dict, draft_results: dict, save_dir: str):
+def analyze_results(pix2pix_results: dict, ddpm_results: dict, draft_results: dict, save_dir: str):
     for metric_key in ["mse", "psnr", "ssim", "rings_dice", "fibers_dice"]:
         fig = plt.figure(figsize=(3,3))
         ax = fig.add_subplot(111)
@@ -293,23 +293,29 @@ def analyze_results(ddpm_results: dict, draft_results: dict, save_dir: str):
         ddpm_metric_stds = [] 
         draft_metric_avgs = [] 
         draft_metric_stds = []
+        pix2pix_metric_avgs = [] 
+        pix2pix_metric_stds = [] 
         for subsample in tqdm(ddpm_results.keys(), desc="... Aggregating results ..."):
             ddpm_data = ddpm_results[subsample][metric_key] 
+            pix2pix_data = pix2pix_results[subsample][metric_key] 
             print(f"\n[---] Number of DDPM seeds for {subsample} subsample: {len(ddpm_data)} [---]")
+            print(f"[---] Number of Pix2Pix seeds for {subsample} subsample: {len(pix2pix_data)} [---]")
             # ddpm_bootstrap_mean, ddpm_bootstrap_std = bootstrap(ddpm_data)
            
             ddpm_metric_avgs.append(np.mean(ddpm_data))
             ddpm_metric_stds.append(np.std(ddpm_data))
+            pix2pix_metric_avgs.append(np.mean(pix2pix_data))
+            pix2pix_metric_stds.append(np.std(pix2pix_data))
             try:
                 draft_data = draft_results[subsample][metric_key] 
                 print(f"[---] Number of DRaFT seeds for {subsample} subsample: {len(draft_data)} [---]")
                 # draft_bootstrap_mean, draft_bootstrap_std = bootstrap(draft_data)
                 draft_metric_avgs.append(np.mean(draft_data))
                 draft_metric_stds.append(np.std(draft_data))
-                _, pvalue = mannwhitneyu(ddpm_data, draft_data) 
-                with open(os.path.join(save_dir, f"{metric_key}.txt"), "a") as f:
-                    f.write(f"{subsample}-{metric_key}: {pvalue:.5f}\n")
-                # print(f"\t{metric_key} p-value: {pvalue:.6f}")
+                # _, pvalue = mannwhitneyu(ddpm_data, draft_data) 
+                # with open(os.path.join(save_dir, f"{metric_key}.txt"), "a") as f:
+                #     f.write(f"{subsample}-{metric_key}: {pvalue:.5f}\n")
+                # # print(f"\t{metric_key} p-value: {pvalue:.6f}")
             except:
                 continue
 
@@ -317,10 +323,15 @@ def analyze_results(ddpm_results: dict, draft_results: dict, save_dir: str):
         ddpm_metric_stds = np.array(ddpm_metric_stds)
         draft_metric_avgs = np.array(draft_metric_avgs)
         draft_metric_stds = np.array(draft_metric_stds)
+        pix2pix_metric_avgs = np.array(pix2pix_metric_avgs)
+        pix2pix_metric_stds = np.array(pix2pix_metric_stds)
         x = np.arange(len(ddpm_results.keys())) 
         x_draft = np.arange(len(draft_results.keys()))
+        x_pix2pix = np.arange(len(pix2pix_results.keys()))
         ax.plot(x, ddpm_metric_avgs, color="tab:blue", marker='o', label="DDPM")
         ax.fill_between(x, ddpm_metric_avgs - ddpm_metric_stds, ddpm_metric_avgs + ddpm_metric_stds, color="tab:blue", alpha=0.2)
+        ax.plot(x_pix2pix, pix2pix_metric_avgs, color="tab:green", marker='o', label="Pix2Pix")
+        ax.fill_between(x_pix2pix, pix2pix_metric_avgs - pix2pix_metric_stds, pix2pix_metric_avgs + pix2pix_metric_stds, color="tab:green", alpha=0.2)
         ax.plot(x_draft, draft_metric_avgs, color="#CC503E", marker='o', label="DRaFT")
         ax.fill_between(x_draft, draft_metric_avgs - draft_metric_stds, draft_metric_avgs + draft_metric_stds, color="#CC503E", alpha=0.2)
         ax.set_xlabel("Subsample size")
@@ -351,12 +362,15 @@ def main():
         RESULTS_FOLDER = os.path.join(BASE_PATH, "baselines", "DRAFT", args.dataset, "results")
         ddpm_results = {}
         draft_results = {}
+        pix2pix_results = {} 
         for subsample in args.subsamples:
             seed_ddpm_results = defaultdict(list)
             seed_draft_results = defaultdict(list) 
+            seed_pix2pix_results = defaultdict(list)
             for seed in SEEDS:
                 ddpm_path = os.path.join(RESULTS_FOLDER, "DDPM", f"DDPM-{subsample}-sample-{seed}.npz") 
                 draft_path = os.path.join(RESULTS_FOLDER, "DRAFT", f"DRAFT-{subsample}-sample-{seed}.npz")
+                pix2pix_path = os.path.join(RESULTS_FOLDER, "Pix2Pix", f"Pix2Pix-{subsample}-sample-{seed}.npz")
                 if os.path.exists(ddpm_path):
                     temp_ddim_results = np.load(ddpm_path)
                     temp_ddim_results = {key: np.array(temp_ddim_results[key]) for key in temp_ddim_results.keys()}
@@ -365,7 +379,6 @@ def main():
                 else:
                     print(f"[---] No DDPM results found for {subsample}-sample-{seed} [---]")
                     
-
                 if os.path.exists(draft_path):
                     temp_draft_results = np.load(draft_path)
                     temp_draft_results = {key: np.array(temp_draft_results[key]) for key in temp_draft_results.keys()}
@@ -374,11 +387,19 @@ def main():
                 else:
                     print(f"[---] No DRAFT results found for {subsample}-sample-{seed} [---]")
 
+                if os.path.exists(pix2pix_path):
+                    temp_pix2pix_results = np.load(pix2pix_path)
+                    temp_pix2pix_results = {key: np.array(temp_pix2pix_results[key]) for key in temp_pix2pix_results.keys()}
+                    for key in temp_pix2pix_results.keys():
+                        seed_pix2pix_results[key].append(np.mean(temp_pix2pix_results[key]))
+                else:
+                    print(f"[---] No Pix2Pix results found for {subsample}-sample-{seed} [---]")
+
             ddpm_results[subsample] = seed_ddpm_results
             draft_results[subsample] = seed_draft_results
-        
+            pix2pix_results[subsample] = seed_pix2pix_results
 
-        analyze_results(ddpm_results=ddpm_results, draft_results=draft_results, save_dir=LOG_FOLDER)
+        analyze_results(pix2pix_results=pix2pix_results, ddpm_results=ddpm_results, draft_results=draft_results, save_dir=LOG_FOLDER)
 
     else:
         unet = load_unet(checkpoint_unet=args.unet_checkpoint, device=DEVICE)

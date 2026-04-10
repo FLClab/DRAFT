@@ -1,6 +1,6 @@
 import numpy as np 
 import torch 
-from skimage.metrics import peak_signal_noise_ratio
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 from sklearn.metrics import precision_recall_curve, auc
 from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure
 from typing import Optional
@@ -8,10 +8,16 @@ from typing import Optional
 def compute_mse(truth: np.ndarray, prediction: np.ndarray) -> float:
     return np.mean((truth - prediction) ** 2) 
 
+def compute_mae(truth: np.ndarray, prediction: np.ndarray) -> float:
+    return np.mean(np.abs(truth - prediction))
+
 def compute_psnr(truth: np.ndarray, prediction: np.ndarray) -> float:
     return peak_signal_noise_ratio(truth, prediction)
 
 def compute_ssim(truth: np.ndarray, prediction: np.ndarray) -> float:
+    return structural_similarity(truth, prediction, data_range=1.0)
+
+def compute_ms_ssim(truth: np.ndarray, prediction: np.ndarray) -> float:
     if isinstance(truth, np.ndarray):
         truth = torch.from_numpy(truth).unsqueeze(0).unsqueeze(0) 
     if isinstance(prediction, np.ndarray):
@@ -35,7 +41,6 @@ def compute_aupr(truth: np.ndarray, prediction: np.ndarray) -> float:
 
 def compute_dice(truth: np.ndarray, prediction: np.ndarray) -> float:
     t, p = truth.ravel().astype(bool), prediction.ravel().astype(bool)
-    
     intersection = np.sum(t & p)
     denominator = np.sum(t) + np.sum(p)
     if denominator == 0:
@@ -50,8 +55,10 @@ def compute_metrics(
 ) -> dict:
     metrics = {}
     metrics["mse"] = compute_mse(truth_image, prediction_image)
+    metrics["mae"] = compute_mae(truth_image, prediction_image)
     metrics["psnr"] = compute_psnr(truth_image, prediction_image)
     metrics["ssim"] = compute_ssim(truth_image, prediction_image)
+    metrics["ms_ssim"] = compute_ms_ssim(truth_image, prediction_image)
     if truth_segmentation is None or prediction_segmentation is None:
         return metrics 
     else:
