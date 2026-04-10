@@ -3,12 +3,19 @@ from torch import nn
 import networks 
 
 class Pix2Pix(nn.Module):
-    def __init__(self, num_epochs: int = 100, in_channels: int = 1, out_channels: int = 1):
+    def __init__(
+        self,
+        num_epochs: int = 100,
+        in_channels: int = 1,
+        out_channels: int = 1,
+        is_train: bool = True,
+    ):
         super(Pix2Pix, self).__init__() 
         self.num_epochs = num_epochs
+        self.is_train = is_train
         self.loss_names = ["G_GAN", "G_GEN", "D_real", "D_fake"]
         self.visual_names = ["real_conf", "fake_STED", "real_STED"]
-        if self.train:
+        if self.is_train:
             self.model_names = ["G", "D"] 
         else:
             self.model_names = ["G"] 
@@ -20,14 +27,14 @@ class Pix2Pix(nn.Module):
             netG="resnet_9blocks", 
             norm="batch",
         )
-        if self.train:
+        if self.is_train:
             self.netD = networks.define_D(
                 input_nc=in_channels + out_channels,
                 ndf=64,
                 netD="basic",
             )
             self.criterionGAN = networks.GANLoss(gan_mode="vanilla")
-            self.criterionMSE = nn.MSELoss()
+            self.criterionL1 = nn.L1Loss()
             self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=0.0002, betas=(0.5, 0.999))
             self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=0.0002, betas=(0.5, 0.999))
             self.optimizers = [self.optimizer_G, self.optimizer_D] 
@@ -76,7 +83,7 @@ class Pix2Pix(nn.Module):
         fake_cat = torch.cat((self.real_conf, self.fake_sted), 1) 
         pred_fake = self.netD(fake_cat)
         self.loss_G_GAN = self.criterionGAN(pred_fake, True) 
-        self.loss_G_GEN = self.criterionMSE(self.fake_sted, self.real_sted) * 100.0
+        self.loss_G_GEN = self.criterionL1(self.fake_sted, self.real_sted) * 100.0
         self.loss_G = self.loss_G_GAN + self.loss_G_GEN 
         self.loss_G.backward()
 

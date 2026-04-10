@@ -1,5 +1,4 @@
 import numpy as np 
-import tifffile 
 import torch 
 from torch import nn
 import matplotlib.pyplot as plt 

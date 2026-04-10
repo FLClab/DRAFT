@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-#SBATCH --time=4:00:00 
+#SBATCH --time=2:59:00 
 #SBATCH --account=def-flavielc
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16Gb
@@ -9,7 +9,6 @@
 #SBATCH --mail-user=frbea320@ulaval.ca
 #SBATCH --mail-type=ALL
 #SBATCH --array=0-4
-
 
 export NCCL_DEBUG=INFO
 export NCCL_IB_DISABLE=0
@@ -21,9 +20,16 @@ module load python/3.12 scipy-stack
 module load cuda cudnn
 source ~/phd/bin/activate
 
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK 
 
 # SUBSAMPLES=(
+#     50
+#     100
+#     250
+#     300
+#     500
+#     1000
+#     2000
 #     3000
 # )
 
@@ -44,16 +50,17 @@ SEEDS=(
 #     done
 # done
 
-# echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
-# echo "% Beginning..."
-# echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+echo "% Beginning..."
+echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 
 # IFS=';' read -r -a opt <<< "${opts[${SLURM_ARRAY_TASK_ID}]}"
 # subsample="${opt[0]}"
 # seed="${opt[1]}"
 
-#python train_ddpm.py --dataset DendriticFActinDataset --subsample 1000 --seed 97
-python train_ddpm.py --dataset DendriticFActinDataset --seed ${SEEDS[${SLURM_ARRAY_TASK_ID}]}
+seed=${SEEDS[$SLURM_ARRAY_TASK_ID]}
+
+python train_pix2pix.py --seed $seed --batch-size 32
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% DONE %"

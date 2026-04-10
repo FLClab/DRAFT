@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-#SBATCH --time=2:00:00 
+#SBATCH --time=1:00:00 
 #SBATCH --account=def-flavielc
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16Gb
@@ -8,7 +8,7 @@
 #SBATCH --output=logs/%x-%A_%a.out
 #SBATCH --mail-user=frbea320@ulaval.ca
 #SBATCH --mail-type=ALL
-#SBATCH --array=0-4
+#SBATCH --array=0-14
 
 export NCCL_DEBUG=INFO
 export NCCL_IB_DISABLE=0
@@ -30,14 +30,35 @@ SEEDS=(
     99
 )
 
+MODEL=(
+    "Pix2Pix"
+    "DDPM"
+    "DRAFT"
+)
+
 
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% Beginning..."
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 
-seed=${SEEDS[$SLURM_ARRAY_TASK_ID]}
-srun python inference_subsample.py --model DRAFT --seed $seed
+opts=()
+for model in "${MODEL[@]}"
+do
+    for seed in "${SEEDS[@]}"
+    do
+        opts+=("$model;$seed")
+    done
+done
+
+IFS=';' read -r -a opt <<< "${opts[${SLURM_ARRAY_TASK_ID}]}"
+model="${opt[0]}"
+seed="${opt[1]}"
+
+# seed=${SEEDS[$SLURM_ARRAY_TASK_ID]}
+
+srun python inference_subsample.py --model $model --seed $seed
+
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% DONE %"
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
