@@ -49,8 +49,8 @@ def training_logs(
     fig = plt.figure()
     ax = fig.add_subplot(111)
     ax_twin = ax.twinx()
-    ax.plot(np.arange(0, len(G_loss_history), 1), G_loss_history, color='tab:blue', label="Train")
-    ax.plot(np.arange(0, len(D_loss_history), 1), D_loss_history, color='tab:red', label="Train")
+    ax.plot(np.arange(0, len(G_loss_history), 1), G_loss_history, color='tab:blue', label="Train GAN loss")
+    ax.plot(np.arange(0, len(D_loss_history), 1), D_loss_history, color='tab:red', label="Train D loss")
     ax.plot(np.arange(0, len(val_loss_history), 1), val_loss_history, color='tab:orange', label="Validation")
     ax.set_yscale("log")
     ax_twin.plot(np.arange(0, len(learning_rate_history), 1), learning_rate_history, color='tab:green', label='lr', ls='--')
@@ -65,16 +65,39 @@ def training_logs(
 def validation(
     model: Pix2Pix,
     valid_dataloader: DataLoader,
+    epoch: int,
+    log_dir: str,
 ):
     model.eval()
     val_loss = AverageMeter()
-    criterion = nn.MSELoss()
     with torch.no_grad():
         for batch in tqdm(valid_dataloader, desc="... Validation ..."):
             model.set_input(batch)
+            confocal, sted, ground_truth, metadata = batch  
+            confocal = confocal[0].squeeze().cpu().numpy() 
+            sted = sted[0].squeeze().cpu().numpy() 
             model.forward()
-            loss = criterion(model.fake_sted, model.real_sted)
+            pred = model.fake_sted[0].squeeze().cpu().numpy()
+            # Keep validation objective aligned with training objective: GAN + reconstruction.
+            fake_cat = torch.cat((model.real_conf, model.fake_sted), 1)
+            pred_fake = model.netD(fake_cat)
+            loss_g_gan = model.criterionGAN(pred_fake, True)
+            loss_g_rec = model.criterionL1(model.fake_sted, model.real_sted) * 100.0
+            loss = loss_g_gan + loss_g_rec
             val_loss.update(loss.item()) 
+    # if (epoch + 1) % 10 == 0:
+    #     fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+    #     axs[0].imshow(confocal, cmap="hot", vmin=0, vmax=1)
+    #     axs[1].imshow(sted, cmap="hot", vmin=0, vmax=1)
+    #     axs[2].imshow(pred, cmap="hot", vmin=0, vmax=1)
+    #     axs[0].set_title("Confocal")
+    #     axs[1].set_title("STED")
+    #     axs[2].set_title("Predicted")
+    #     for ax in axs:
+    #         ax.axis("off")
+    #     plt.tight_layout()
+    #     fig.savefig(os.path.join(log_dir, f"Pix2Pix_validation_{epoch+1}_{args.seed}.png"))
+    #     plt.close(fig)
     return val_loss.avg
 
 def train(
@@ -105,15 +128,15 @@ def train(
         D_loss_history.append(train_D_loss.avg)
         model.update_learning_rate()
 
-        val_loss = validation(model, valid_dataloader)
+        val_loss = validation(model, valid_dataloader, epoch, log_dir=log_dir)
         val_loss_history.append(val_loss)
-        if (epoch + 1) % 10 == 0:
-            torch.save({
-                'epoch': epoch + 1,
-                'state_dict': model.state_dict(),
-                'optimizer_state_dict': [optimizer.state_dict() for optimizer in model.optimizers],
-                'scheduler_state_dict': [scheduler.state_dict() for scheduler in model.schedulers],
-            }, os.path.join(save_dir, f"Pix2Pix_{args.dataset}-{args.subsample if args.subsample else 'full'}-sample-{args.seed}_epoch_{epoch+1}.pth"))
+        # if (epoch + 1) % 10 == 0:
+        #     torch.save({
+        #         'epoch': epoch + 1,
+        #         'state_dict': model.state_dict(),
+        #         'optimizer_state_dict': [optimizer.state_dict() for optimizer in model.optimizers],
+        #         'scheduler_state_dict': [scheduler.state_dict() for scheduler in model.schedulers],
+        #     }, os.path.join(save_dir, f"Pix2Pix_{args.dataset}-{args.subsample if args.subsample else 'full'}-sample-{args.seed}_epoch_{epoch+1}.pth"))
 
         if not args.dry_run:
             save_best_model(current_val=val_loss, epoch=epoch, model=model)
@@ -160,7 +183,12 @@ def main():
         
     valid_dataloader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, drop_last=False) 
 
-    pix2pix_model = Pix2Pix(num_epochs=args.num_epochs,in_channels=1, out_channels=1)
+    pix2pix_model = Pix2Pix(
+        num_epochs=args.num_epochs,
+        in_channels=1,
+        out_channels=1,
+        is_train=True,
+    )
     pix2pix_model.to(DEVICE)
     pix2pix_model.train()
     print(f"[---] Loaded Pix2Pix model [---]")

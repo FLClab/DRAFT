@@ -1,14 +1,14 @@
 #!/bin/bash 
 
-#SBATCH --time=1:00:00 
+#SBATCH --time=2:59:00 
 #SBATCH --account=def-flavielc
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16Gb
-#SBATCH --gpus=nvidia_h100_80gb_hbm3_3g.40gb:1
+#SBATCH --gpus=h100:1
 #SBATCH --output=logs/%x-%A_%a.out
 #SBATCH --mail-user=frbea320@ulaval.ca
 #SBATCH --mail-type=ALL
-#SBATCH --array=0-14
+#SBATCH --array=0-4
 
 export NCCL_DEBUG=INFO
 export NCCL_IB_DISABLE=0
@@ -20,7 +20,18 @@ module load python/3.12 scipy-stack
 module load cuda cudnn
 source ~/phd/bin/activate
 
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK 
+
+# SUBSAMPLES=(
+#     50
+#     100
+#     250
+#     300
+#     500
+#     1000
+#     2000
+#     3000
+# )
 
 SEEDS=(
     9
@@ -30,34 +41,26 @@ SEEDS=(
     99
 )
 
-MODEL=(
-    "Pix2Pix"
-    "DDPM"
-    "DRAFT"
-)
-
-
+# opts=()
+# for subsample in "${SUBSAMPLES[@]}"
+# do
+#     for seed in "${SEEDS[@]}"
+#     do
+#             opts+=("$subsample;$seed")
+#     done
+# done
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% Beginning..."
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 
-opts=()
-for model in "${MODEL[@]}"
-do
-    for seed in "${SEEDS[@]}"
-    do
-        opts+=("$model;$seed")
-    done
-done
+# IFS=';' read -r -a opt <<< "${opts[${SLURM_ARRAY_TASK_ID}]}"
+# subsample="${opt[0]}"
+# seed="${opt[1]}"
 
-IFS=';' read -r -a opt <<< "${opts[${SLURM_ARRAY_TASK_ID}]}"
-model="${opt[0]}"
-seed="${opt[1]}"
+seed=${SEEDS[$SLURM_ARRAY_TASK_ID]}
 
-# seed=${SEEDS[$SLURM_ARRAY_TASK_ID]}
-
-srun python inference_subsample.py --model $model --seed $seed
+python train_pix2pix.py --seed $seed --batch-size 32
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% DONE %"
