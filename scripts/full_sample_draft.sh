@@ -1,10 +1,10 @@
 #!/bin/bash 
 
-#SBATCH --time=2:00:00 
+#SBATCH --time=24:00:00 
 #SBATCH --account=def-flavielc
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16Gb
-#SBATCH --gpus=nvidia_h100_80gb_hbm3_3g.40gb:1
+#SBATCH --gpus=h100:1
 #SBATCH --output=logs/%x-%A_%a.out
 #SBATCH --mail-user=frbea320@ulaval.ca
 #SBATCH --mail-type=ALL
@@ -22,6 +22,7 @@ source ~/phd/bin/activate
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
+
 SEEDS=(
     9
     42
@@ -30,14 +31,23 @@ SEEDS=(
     99
 )
 
-
+CHECKPOINTS=(
+    "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-full-sample-9.pth"
+    "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-full-sample-42.pth"
+    "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-full-sample-87.pth"
+    "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-full-sample-97.pth"
+    "/home/frbea320/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-full-sample-99.pth"
+)
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% Beginning..."
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 
 seed=${SEEDS[$SLURM_ARRAY_TASK_ID]}
-srun python inference_subsample.py --model DRAFT --seed $seed
+checkpoint=${CHECKPOINTS[$SLURM_ARRAY_TASK_ID]}
+
+python train_draft.py --K 1 --ddim-ckpt $checkpoint --subsample None --seed $seed
+
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% DONE %"
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"

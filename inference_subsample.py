@@ -408,12 +408,20 @@ def main():
         test_dataset = DendriticFActinDataset(files=files, split="test", coordinates_path=os.path.join(BASE_PATH, "Datasets", f"{args.dataset}Dataset-exported"))
         print(f"[---] Test dataset size: {len(test_dataset)} [---]")
         test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=False)
+        missing_models = []
         for subsample in args.subsamples:
             RESULTS_FOLDER = os.path.join(BASE_PATH, "baselines", args.dataset, "results", f"{subsample}-sample")
             TIF_FOLDER = os.path.join(BASE_PATH, "baselines", args.dataset, "results", f"{subsample}-sample", "images")
+            if os.path.exists(os.path.join(LOG_FOLDER, f"{args.model}-{subsample}-sample-{args.seed}.npz")):
+                print(f"[---] Results already exist for {args.model}-{subsample}-sample-{args.seed}, skipping... [---]")
+                continue
             os.makedirs(RESULTS_FOLDER, exist_ok=True)
             os.makedirs(TIF_FOLDER, exist_ok=True)
-            model = load_models(model_type=args.model, subsample=subsample).to(DEVICE)
+            try:
+                model = load_models(model_type=args.model, subsample=subsample).to(DEVICE)
+            except FileNotFoundError:
+                missing_models.append(f"{args.model}-{subsample}-{args.seed}")
+                continue
 
             if args.model != f"Pix2Pix":
                 
@@ -441,6 +449,10 @@ def main():
                 os.path.join(LOG_FOLDER, f"{args.model}-{subsample}-sample-{args.seed}.npz"),
                 **results
             )
+
+        if len(missing_models) > 0:
+            for m in missing_models:
+                print(f"\tMissing {m}")
             
                 
 
