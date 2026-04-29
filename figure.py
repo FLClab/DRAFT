@@ -16,12 +16,14 @@ parser.add_argument("--dataset", type=str, default="diffusion-super-resolution")
 args = parser.parse_args()
 
 CLASSES = [
-    "ddim",
+    "pix2pix",
+    "ddpm",
     "draft",
-
 ]
+
 NAMES = {
-    "ddim" : "DDIM",
+    "pix2pix" : "Pix2Pix",
+    "ddpm" : "DDPM",
     "draft" : "DRAFT"
 }
 
