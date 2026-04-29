@@ -1,14 +1,14 @@
 #!/bin/bash 
 
-#SBATCH --time=1:00:00 
+#SBATCH --time=0:30:00 
 #SBATCH --account=def-flavielc
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=16Gb
+#SBATCH --mem=8Gb
 #SBATCH --gpus=nvidia_h100_80gb_hbm3_3g.40gb:1
 #SBATCH --output=logs/%x-%A_%a.out
 #SBATCH --mail-user=frbea320@ulaval.ca
 #SBATCH --mail-type=ALL
-#SBATCH --array=0-14
+#SBATCH --array=0-4
 
 export NCCL_DEBUG=INFO
 export NCCL_IB_DISABLE=0
@@ -32,8 +32,6 @@ SEEDS=(
 
 MODEL=(
     "Pix2Pix"
-    "DDPM"
-    "DRAFT"
 )
 
 

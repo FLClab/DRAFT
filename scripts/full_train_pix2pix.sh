@@ -8,7 +8,7 @@
 #SBATCH --output=logs/%x-%A_%a.out
 #SBATCH --mail-user=frbea320@ulaval.ca
 #SBATCH --mail-type=ALL
-#SBATCH --array=0-39
+#SBATCH --array=0-4
 
 
 export NCCL_DEBUG=INFO
@@ -23,17 +23,6 @@ source ~/phd/bin/activate
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK 
 
-SUBSAMPLES=(
-    50
-    100
-    250
-    300
-    500
-    1000
-    2000
-    3000
-)
-
 SEEDS=(
     9
     42
@@ -42,26 +31,13 @@ SEEDS=(
     99
 )
 
-opts=()
-for subsample in "${SUBSAMPLES[@]}"
-do
-    for seed in "${SEEDS[@]}"
-    do
-            opts+=("$subsample;$seed")
-    done
-done
-
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% Beginning..."
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 
-IFS=';' read -r -a opt <<< "${opts[${SLURM_ARRAY_TASK_ID}]}"
-subsample="${opt[0]}"
-seed="${opt[1]}"
+seed=${SEEDS[$SLURM_ARRAY_TASK_ID]}
 
-# seed=${SEEDS[$SLURM_ARRAY_TASK_ID]}
-
-python train_pix2pix.py --seed $seed --batch-size 32 --subsample $subsample
+python train_pix2pix.py --seed $seed --batch-size 32 --dataset AxonalRingsDataset --save-folder /home/frbea320/links/scratch/baselines/DRAFT/AxonalRingsDataset
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% DONE %"

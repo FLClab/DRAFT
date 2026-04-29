@@ -174,9 +174,17 @@ def main():
     print(f"[---] Training set size: {len(train_dataset)} [---]")
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False)
 
-    valid_files_path = os.path.join(os.path.dirname(LOG_FOLDER), "valid_files.txt")
-    with open(valid_files_path, "r") as f:
-        valid_files = [line.strip() for line in f if line.strip()]
+    if args.dataset == "DendriticFActinDataset":
+
+        valid_files_path = os.path.join(os.path.dirname(LOG_FOLDER), "valid_files.txt")
+        with open(valid_files_path, "r") as f:
+            valid_files = [line.strip() for line in f if line.strip()]
+
+    elif args.dataset == "AxonalRingsDataset":
+        valid_files = glob.glob(os.path.join(args.dataset_path, args.dataset, "valid", "*.tif"))
+
+    else:
+        raise ValueError(f"Dataset {args.dataset} not supported")
 
     valid_dataset = DatasetClass(files=valid_files, transform=None)
     print(f"[---] Validation set size: {len(valid_dataset)} [---]")

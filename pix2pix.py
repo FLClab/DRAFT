@@ -34,7 +34,7 @@ class Pix2Pix(nn.Module):
                 netD="basic",
             )
             self.criterionGAN = networks.GANLoss(gan_mode="vanilla")
-            self.criterionL1 = nn.L1Loss()
+            self.criterionL1 = torch.nn.MSELoss() # nn.L1Loss()
             self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=0.0002, betas=(0.5, 0.999))
             self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=0.0002, betas=(0.5, 0.999))
             self.optimizers = [self.optimizer_G, self.optimizer_D] 

@@ -24,7 +24,7 @@ parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--dataset", type=str, default="DendriticFActinDataset")
 parser.add_argument("--dataset-path", type=str, default=os.path.join(BASE_PATH, "Datasets"))
 parser.add_argument("--num-epochs", type=int, default=100)
-parser.add_argument("--batch-size", type=int, default=2)
+parser.add_argument("--batch-size", type=int, default=4)
 parser.add_argument("--dry-run", action="store_true")
 parser.add_argument("--save-folder", type=str, default=os.path.join(BASE_PATH, "baselines", "DRAFT", "DendriticFActin"))
 parser.add_argument("--subsample", type=int, default=None)
@@ -216,10 +216,16 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False) 
 
 
+    if args.dataset == "DendriticFActinDataset":
+        valid_files_path = os.path.join(os.path.dirname(LOG_FOLDER), f"valid_files.txt")
+        with open(valid_files_path, "r") as f:
+            valid_files = [line.strip() for line in f if line.strip()]
 
-    valid_files_path = os.path.join(os.path.dirname(LOG_FOLDER), f"valid_files.txt")
-    with open(valid_files_path, "r") as f:
-        valid_files = [line.strip() for line in f if line.strip()]
+    elif args.dataset == "AxonalRingsDataset":
+        valid_files = glob.glob(os.path.join(args.dataset_path, args.dataset, "valid", "*.tif"))
+
+    else:
+        raise ValueError(f"Dataset {args.dataset} not supported")
 
     valid_dataset = DatasetClass(files=valid_files, transform=None)
     print(f"[---] Validation set size: {len(valid_dataset)} [---]")

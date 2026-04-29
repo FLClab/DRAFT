@@ -31,11 +31,11 @@ SEEDS=(
 )
 
 CHECKPOINTS=(
-    "/home/frbea320/links/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-full-sample-9.pth"
-    "/home/frbea320/links/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-full-sample-42.pth"
-    "/home/frbea320/links/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-full-sample-87.pth"
-    "/home/frbea320/links/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-full-sample-97.pth"
-    "/home/frbea320/links/scratch/baselines/DRAFT/DendriticFActin/DDPM_DendriticFActinDataset-full-sample-99.pth"
+    "/home/frbea320/links/scratch/baselines/DRAFT/AxonalRingsDataset/DDPM_AxonalRingsDataset-full-sample-9.pth"
+    "/home/frbea320/links/scratch/baselines/DRAFT/AxonalRingsDataset/DDPM_AxonalRingsDataset-full-sample-42.pth"
+    "/home/frbea320/links/scratch/baselines/DRAFT/AxonalRingsDataset/DDPM_AxonalRingsDataset-full-sample-87.pth"
+    "/home/frbea320/links/scratch/baselines/DRAFT/AxonalRingsDataset/DDPM_AxonalRingsDataset-full-sample-97.pth"
+    "/home/frbea320/links/scratch/baselines/DRAFT/AxonalRingsDataset/DDPM_AxonalRingsDataset-full-sample-99.pth"
 )
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
@@ -45,7 +45,7 @@ echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 seed=${SEEDS[$SLURM_ARRAY_TASK_ID]}
 checkpoint=${CHECKPOINTS[$SLURM_ARRAY_TASK_ID]}
 
-python train_draft.py --K 1 --ddim-ckpt $checkpoint --seed $seed
+python train_draft.py --K 1 --ddim-ckpt $checkpoint --seed $seed --dataset AxonalRingsDataset --save-folder /home/frbea320/links/scratch/baselines/DRAFT/AxonalRingsDataset
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% DONE %"

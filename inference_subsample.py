@@ -32,7 +32,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--dataset", type=str, default="DendriticFActin")
 parser.add_argument("--dataset-path", type=str, default=os.path.join(BASE_PATH, "Datasets"))
-parser.add_argument("--subsamples", nargs="+", type=int, default=[50, 100, 250, 300, 500, 1000, 2000, 3000, None])
+parser.add_argument("--subsamples", nargs="+", type=int, default=[None])#[50, 100, 250, 300, 500, 1000, 2000, 3000, None])
 parser.add_argument("--eval-only", action="store_true", default=False)
 parser.add_argument("--model", type=str, default="DDPM")
 parser.add_argument("--ckpt-path", type=str, default=os.path.join(BASE_PATH, "baselines", "DRAFT"))
@@ -324,11 +324,8 @@ def inference(
                 fig.savefig(os.path.join(image_outdir, f"{savename}.png"), dpi=900, bbox_inches="tight")
                 plt.close(fig)
             # tiff_data = np.stack(tiff_data, axis=0)
-            
             # tifffile.imwrite(os.path.join(image_dir, f"{savename}_{args.model}_{subsample}-sample-{args.seed}.tif"), data=tiff_data.astype(np.float32))
     return results 
-
-
 
 def bootstrap(data: np.ndarray, n_bootstraps: int = 100):
     num_samples = len(data)

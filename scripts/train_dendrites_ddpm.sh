@@ -1,10 +1,10 @@
 #!/bin/bash 
 
-#SBATCH --time=4:00:00 
+#SBATCH --time=2:00:00 
 #SBATCH --account=def-flavielc
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16Gb
-#SBATCH --gpus=h100:1
+#SBATCH --gpus=nvidia_h100_80gb_hbm3_3g.40gb:1
 #SBATCH --output=logs/%x-%A_%a.out
 #SBATCH --mail-user=frbea320@ulaval.ca
 #SBATCH --mail-type=ALL
@@ -53,7 +53,7 @@ SEEDS=(
 # seed="${opt[1]}"
 
 #python train_ddpm.py --dataset DendriticFActinDataset --subsample 1000 --seed 97
-python train_ddpm.py --dataset DendriticFActinDataset --seed ${SEEDS[${SLURM_ARRAY_TASK_ID}]}
+python train_ddpm.py --dataset AxonalRingsDataset --seed ${SEEDS[${SLURM_ARRAY_TASK_ID}]} --save-folder /home/frbea320/links/scratch/baselines/DRAFT/AxonalRingsDataset
 
 echo "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
 echo "% DONE %"
