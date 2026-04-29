@@ -3,7 +3,8 @@ import torch
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 from sklearn.metrics import precision_recall_curve, auc
 from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure
-from typing import Optional
+from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
+from typing import Optional, Tuple
 import pywt
 from scipy.stats import pearsonr
 from stedfm import get_pretrained_model_v2 
@@ -33,6 +34,41 @@ def compute_mae(truth: np.ndarray, prediction: np.ndarray, foreground: Optional[
             return np.nan
         residual = residual[fg]
     return np.mean(residual)
+
+
+def compute_gradient_mse(
+    truth: np.ndarray,
+    prediction: np.ndarray,
+    foreground: Optional[np.ndarray] = None,
+) -> float:
+    if truth.shape != prediction.shape:
+        raise ValueError("truth and prediction must have the same shape.")
+
+    if truth.ndim == 2:
+        truth = truth[np.newaxis, ...]
+        prediction = prediction[np.newaxis, ...]
+    if truth.ndim != 3:
+        raise ValueError("Expected a 2D image or a (C, H, W) array.")
+
+    per_channel_means = []
+    for c in range(truth.shape[0]):
+        gy_t, gx_t = np.gradient(truth[c])
+        gy_p, gx_p = np.gradient(prediction[c])
+        err = (gx_p - gx_t) ** 2 + (gy_p - gy_t) ** 2
+        if foreground is not None:
+            fg = foreground.astype(bool)
+            if fg.shape != truth.shape[1:]:
+                raise ValueError(
+                    "foreground must have shape (H, W) matching the image."
+                )
+            if not np.any(fg):
+                return np.nan
+            per_channel_means.append(np.mean(err[fg]))
+        else:
+            per_channel_means.append(np.mean(err))
+
+    return float(np.mean(per_channel_means))
+
 
 def compute_psnr(
     truth: np.ndarray,
@@ -131,6 +167,67 @@ def compute_fourier_ncc(image1: np.ndarray, image2: np.ndarray) -> float:
     # Return the average similarity score across both channels
     return np.mean(channel_similarities)
 
+
+def _safe_corrcoef(a: np.ndarray, b: np.ndarray) -> float:
+    """Compute a robust Pearson correlation for flattened vectors."""
+    if a.size == 0 or b.size == 0:
+        return np.nan
+    std_a = np.std(a)
+    std_b = np.std(b)
+    if std_a == 0.0 and std_b == 0.0:
+        return 1.0 if np.allclose(a, b) else 0.0
+    if std_a == 0.0 or std_b == 0.0:
+        return 0.0
+    corr = np.corrcoef(a, b)[0, 1]
+    return float(corr)
+
+
+def compute_fourier_ncc_bands(
+    image1: np.ndarray,
+    image2: np.ndarray,
+    low_freq_ratio: float = 0.10,
+) -> Tuple[float, float]:
+    """
+    Split Fourier NCC into low- and high-frequency components.
+
+    low_freq_ratio is the radial cutoff (0-1) relative to the maximum
+    FFT radius after centering with fftshift.
+    """
+    if image1.shape != image2.shape:
+        raise ValueError("Both images must have the same shape.")
+    if not (0.0 < low_freq_ratio < 1.0):
+        raise ValueError("low_freq_ratio must be between 0 and 1.")
+
+    if image1.ndim == 2:
+        image1 = image1[np.newaxis, ...]
+    if image2.ndim == 2:
+        image2 = image2[np.newaxis, ...]
+
+    height, width = image1.shape[-2], image1.shape[-1]
+    yy, xx = np.ogrid[:height, :width]
+    center_y = (height - 1) / 2.0
+    center_x = (width - 1) / 2.0
+    radius = np.sqrt((yy - center_y) ** 2 + (xx - center_x) ** 2)
+    max_radius = np.max(radius)
+    cutoff = low_freq_ratio * max_radius
+    low_mask = radius <= cutoff
+    high_mask = ~low_mask
+
+    low_scores = []
+    high_scores = []
+    for i in range(image1.shape[0]):
+        magnitude1 = np.abs(np.fft.fftshift(np.fft.fft2(image1[i])))
+        magnitude2 = np.abs(np.fft.fftshift(np.fft.fft2(image2[i])))
+
+        low_scores.append(
+            _safe_corrcoef(magnitude1[low_mask].ravel(), magnitude2[low_mask].ravel())
+        )
+        high_scores.append(
+            _safe_corrcoef(magnitude1[high_mask].ravel(), magnitude2[high_mask].ravel())
+        )
+
+    return float(np.mean(low_scores)), float(np.mean(high_scores))
+
 def compute_wavelet_ncc(image1: np.ndarray, image2: np.ndarray, wavelet: str = 'haar', level: int = 2) -> float:
     if image1.shape != image2.shape:
         raise ValueError("Both images must be 2-channel and have the same shape.")
@@ -205,6 +302,28 @@ def compute_phase_correlation(image1: np.ndarray, image2: np.ndarray) -> float:
         
     return np.mean(correlation_scores)
 
+def compute_lpips(truth: np.ndarray, prediction: np.ndarray) -> float:
+    if isinstance(truth, np.ndarray):
+        truth = torch.from_numpy(truth).float()
+    if isinstance(prediction, np.ndarray):
+        prediction = torch.from_numpy(prediction).float()
+
+    if truth.ndim == 2:
+        truth = truth.unsqueeze(0).unsqueeze(0)       # (1, 1, H, W)
+        prediction = prediction.unsqueeze(0).unsqueeze(0)
+    elif truth.ndim == 3:
+        truth = truth.unsqueeze(0)                    # (1, C, H, W)
+        prediction = prediction.unsqueeze(0)
+
+    # LPIPS expects 3-channel input; tile grayscale if needed
+    if truth.shape[1] == 1:
+        truth = truth.repeat(1, 3, 1, 1)
+        prediction = prediction.repeat(1, 3, 1, 1)
+
+    lpips_fn = LearnedPerceptualImagePatchSimilarity(net_type="alex", normalize=True)
+    return lpips_fn(prediction, truth).item()
+
+
 def compute_stedfm_similarity(image1: np.ndarray, image2: np.ndarray) -> float:
     image1 = torch.from_numpy(image1).unsqueeze(0).unsqueeze(0)
     image2 = torch.from_numpy(image2).unsqueeze(0).unsqueeze(0)
@@ -222,14 +341,21 @@ def compute_metrics(
 ) -> dict:
     metrics = {}
     metrics["mse"] = compute_mse(truth_image, prediction_image, foreground)
-    metrics["mae"] = compute_mae(truth_image, prediction_image, foreground)
-    metrics["psnr"] = compute_psnr(truth_image, prediction_image, foreground)
+    # metrics["mae"] = compute_mae(truth_image, prediction_image, foreground)
+    # metrics["gradient_mse"] = compute_gradient_mse(
+    #     truth_image, prediction_image, foreground
+    # )
+    # metrics["psnr"] = compute_psnr(truth_image, prediction_image, foreground)
     metrics["ssim"] = compute_ssim(truth_image, prediction_image, foreground)
     metrics["ms_ssim"] = compute_ms_ssim(truth_image, prediction_image)
-    metrics["fourier_ncc"] = compute_fourier_ncc(truth_image, prediction_image)
-    metrics["wavelet_ncc"] = compute_wavelet_ncc(truth_image, prediction_image)
-    metrics["phase_correlation"] = compute_phase_correlation(truth_image, prediction_image)
+    # metrics["fourier_ncc"] = compute_fourier_ncc(truth_image, prediction_image)
+    low_ncc, high_ncc = compute_fourier_ncc_bands(truth_image, prediction_image)
+    metrics["fourier_ncc_low"] = low_ncc
+    metrics["fourier_ncc_high"] = high_ncc
+    # metrics["wavelet_ncc"] = compute_wavelet_ncc(truth_image, prediction_image)
+    # metrics["phase_correlation"] = compute_phase_correlation(truth_image, prediction_image)
     metrics["stedfm"] = compute_stedfm_similarity(truth_image, prediction_image)
+    metrics["lpips"] = compute_lpips(truth_image, prediction_image)
     if truth_segmentation is None or prediction_segmentation is None:
         return metrics 
     else:

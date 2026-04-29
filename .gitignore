@@ -12,5 +12,6 @@ data/
 results/
 DendriticFActin-experiment/
 dendrites-examples/
+metric-examples/
 DendriticFActinDataset-experiment/
 axonalrings-experiment/
