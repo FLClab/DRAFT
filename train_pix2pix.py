@@ -161,6 +161,8 @@ def main():
     # Take full dataset or subsample the same way as the DDPM model (to ensure valid comparison)
 
     files = sorted(glob.glob(os.path.join(args.dataset_path, args.dataset, "train", "*.tif")))
+    print(f"[---] Training set size: {len(files)} [---]")
+    exit()
     if args.subsample is not None:
         train_files_path = os.path.join(os.path.dirname(LOG_FOLDER), f"DDPM-{args.subsample}-sample", f"subsampled_files-{args.seed}.txt")
         with open(train_files_path, "r") as f:
